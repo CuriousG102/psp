@@ -12,23 +12,166 @@ def _split_action_space(action_dims, num_colors):
     # TODO: Add support for more variation in the future.
     assert num_colors == 2 ** len(action_dims)
     return [2] * len(action_dims)
-    # colors_per_dim = [
-    #     num_colors // len(action_dims) for _ in range(len(action_dims))]
-    # for i in range(num_colors % len(action_dims)):
-    #     colors_per_dim[i] += 1
-    # return colors_per_dim
 
 
 def _split_reward_space(reward_range, num_colors, max_evil):
+    num_non_single = sum(isinstance(r, tuple) for r in reward_range)
+    num_single = len(reward_range) - num_non_single
     if max_evil:
         assert num_colors >= len(reward_range)
     else:
-        assert num_colors >= len(reward_range) * 2
+        assert num_colors >= 2 * num_non_single + num_single
+        assert num_non_single > 0 or len(reward_range) > 1
+
+    if num_non_single == 0:
+        assert num_colors == len(reward_range)
     colors_per_range = [
-        num_colors // len(reward_range) for _ in range(len(reward_range))]
-    for i in range(num_colors % len(reward_range)):
-        colors_per_range[i] += 1
+        num_colors // num_non_single - num_single
+        if isinstance(r, tuple) else 1
+        for r in reward_range
+    ]
+    num_left = num_colors - sum(colors_per_range)
+    while num_left != 0:
+        for i in range(len(reward_range)):
+            if not isinstance(reward_range[i], tuple):
+                continue
+            colors_per_range[i] += 1
+            num_left -= 1
+            if num_left == 0:
+                break
+
     return colors_per_range
+
+
+def _get_min_colors_needed(evil_level, reward_range, action_dims_to_split):
+    if evil_level == EvilEnum.MAXIMUM_EVIL:
+        return len(reward_range) * 2 ** len(action_dims_to_split)
+    elif evil_level == EvilEnum.EVIL_REWARD:
+        num_non_single = sum(isinstance(r, tuple) for r in reward_range)
+        num_single = len(reward_range) - num_non_single
+        return 2 * num_non_single + num_single
+    elif evil_level == EvilEnum.EVIL_ACTION:
+        return 2 ** len(action_dims_to_split)
+    elif evil_level == EvilEnum.EVIL_SEQUENCE:
+        return 2
+    elif evil_level == EvilEnum.MINIMUM_EVIL:
+        return 2
+    elif evil_level == EvilEnum.RANDOM:
+        return 2
+    elif evil_level == EvilEnum.NONE:
+        return 0
+    else:
+        raise ValueError(f'{evil_level} not implemented.')
+
+
+def _get_num_colors_log_message(num_colors_per_cell, extra):
+    return (
+        f'num_colors_per_cell {num_colors_per_cell} '
+        f'cannot be satisfied. {extra} colors remain for each '
+        f'cell.')
+
+
+def _get_colors_for_action_and_reward_max_evil(
+        num_colors_per_cell, action_dims_to_split, reward_range):
+    colors_for_action = 2 ** len(action_dims_to_split)
+    colors_for_reward = num_colors_per_cell // colors_for_action
+    total = colors_for_action * colors_for_reward
+    if total < num_colors_per_cell:
+        # TODO: Test this logic
+        extra = (
+                num_colors_per_cell
+                - colors_for_action * colors_for_reward)
+        logging.warning(
+            _get_num_colors_log_message(num_colors_per_cell, extra))
+    return (
+        _split_action_space(action_dims_to_split, colors_for_action),
+        _split_reward_space(reward_range, colors_for_reward, True))
+
+
+def _get_colors_for_evil_action(num_colors_per_cell, action_dims_to_split):
+    colors_for_action = 2 ** len(action_dims_to_split)
+    if colors_for_action < num_colors_per_cell:
+        extra = num_colors_per_cell - colors_for_action
+        logging.warning(
+            _get_num_colors_log_message(num_colors_per_cell, extra))
+    return _split_action_space(action_dims_to_split, num_colors_per_cell)
+
+
+def _get_reward_idx(reward, reward_range, colors_per_reward_range):
+    range_found = False
+    start = 0
+    for i, (r, num_colors_in_range) in enumerate(zip(
+            reward_range, colors_per_reward_range)):
+        if isinstance(r, tuple):
+            range_min, range_max = r
+            if range_min <= reward <= range_max:
+                range_found = True
+                break
+        else:
+            if r == reward:
+                range_found = True
+                break
+        start += num_colors_in_range
+
+    if not range_found:
+        raise ValueError(f'Unexpected reward {reward}')
+    if isinstance(r, tuple):
+        num_colors_in_range = colors_per_reward_range[i]
+        delta = (range_max - range_min) / num_colors_in_range
+        return start + int((reward - range_min) / delta)
+    else:
+        return start
+
+
+def _get_action_idx(action, action_dims_to_split, colors_per_action_dim):
+    action = [
+        action_ for i, action_ in enumerate(action)
+        if i in action_dims_to_split
+    ]
+
+    for action_ in action:
+        assert -1 <= action_ <= 1
+
+    pow = 1
+    for num_colors in colors_per_action_dim:
+        pow *= num_colors
+    action_idx = 0
+
+    for num_colors, action_ in zip(colors_per_action_dim, action):
+        delta = 2 / num_colors
+        action_idx += (
+                int((action_ + (1 - 1e-6)) / delta) * (pow // num_colors))
+        pow //= num_colors
+
+    return action_idx
+
+
+def _get_background_image_from_color_grid(
+    color_grid,
+    height,
+    width,
+    num_cells_per_dim
+):
+    bg_image = color_grid
+    bg_image = np.repeat(
+        bg_image, height // num_cells_per_dim, axis=0)
+    bg_image = np.concatenate([
+        bg_image,
+        np.repeat(
+            bg_image[-1:, ...],
+            height % num_cells_per_dim,
+            axis=0)
+    ], axis=0)
+    bg_image = np.repeat(
+        bg_image, width // num_cells_per_dim, axis=1)
+    bg_image = np.concatenate([
+        bg_image,
+        np.repeat(
+            bg_image[:, -1:, :],
+            width % num_cells_per_dim,
+            axis=1)
+    ], axis=1)
+    return bg_image
 
 
 class EvilEnum(enum.Enum):
@@ -96,54 +239,32 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
             # TODO: Also support walker run.
             raise ValueError('Other tasks not supported')
 
-        if evil_level == EvilEnum.MAXIMUM_EVIL:
-            min_colors_needed = (
-                    len(self.reward_range)
-                    * 2 ** len(self.action_dims_to_split))
-        elif evil_level == EvilEnum.EVIL_REWARD:
-            min_colors_needed = 2 * len(self.reward_range)
-        elif evil_level == EvilEnum.EVIL_ACTION:
-            min_colors_needed = 2 ** len(self.action_dims_to_split)
-        else:
-            min_colors_needed = 0
-
+        min_colors_needed = _get_min_colors_needed(
+            evil_level, self.reward_range, self.action_dims_to_split)
         if self.num_colors_per_cell < min_colors_needed:
             raise ValueError(
                 f'{num_colors_per_cell} insufficient for minimum colors '
                 f'needed {min_colors_needed}')
 
         if evil_level == EvilEnum.MAXIMUM_EVIL:
-            colors_for_action = 2 ** len(self.action_dims_to_split)
-            colors_for_reward = (
-                self.num_colors_per_cell // colors_for_action)
-            total = colors_for_action * colors_for_reward
-            if total < self.num_colors_per_cell:
-                # TODO: Test this logic
-                extra = (
-                        self.num_colors_per_cell
-                        - colors_for_action * colors_for_reward)
-                logging.warn(
-                    f'num_colors_per_cell {self.num_colors_per_cell} '
-                    f'cannot be satisfied. {extra} colors remain for each '
-                    f'cell.')
-            self.colors_per_action_dim = _split_action_space(
-                self.action_dims_to_split, colors_for_action)
-            self.colors_per_reward_range = _split_reward_space(
-                self.reward_range, colors_for_reward, True)
+            self.colors_per_action_dim, self.colors_per_reward_range = (
+                _get_colors_for_action_and_reward_max_evil(
+                    self.num_colors_per_cell,
+                    self.action_dims_to_split,
+                    self.reward_range
+                )
+            )
+            self.num_action_indices = 1
+            for n in self.colors_per_action_dim:
+                self.num_action_indices *= n
         elif evil_level == EvilEnum.EVIL_REWARD:
             self.colors_per_reward_range = _split_reward_space(
                 self.reward_range, self.num_colors_per_cell, False)
         elif evil_level == EvilEnum.EVIL_ACTION:
-            colors_for_action = 2 ** len(self.action_dims_to_split)
-            if colors_for_action < self.num_colors_per_cell:
-                extra = self.num_colors_per_cell - colors_for_action
-                logging.warn(
-                    f'num_colors_per_cell {self.num_colors_per_cell} '
-                    f'cannot be satisfied. {extra} colors remain for each '
-                    f'cell.')
-            self.colors_per_action_dim = _split_action_space(
-                self.action_dims_to_split, self.num_colors_per_cell)
+            self.colors_per_action_dim = _get_colors_for_evil_action(
+                self.num_colors_per_cell, self.action_dims_to_split)
 
+        np.random.seed(task_kwargs.get('random', 1))
         self._color_grid = np.random.randint(255, size=[
             self.num_cells_per_dim, self.num_cells_per_dim,
             self.num_colors_per_cell, 3])
@@ -187,41 +308,6 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
 
         return obs
 
-    def _get_reward_idx(self, reward):
-        range_found = False
-        for i, (range_min, range_max) in enumerate(self.reward_range):
-            if range_min <= reward <= range_max:
-                range_found = True
-                break
-        if not range_found:
-            raise ValueError(f'Unexpected reward {reward}')
-        num_colors_in_range = self.colors_per_reward_range[i]
-        delta = (range_max - range_min) / num_colors_in_range
-        return int((reward - range_min) / delta)
-
-    def _get_action_idx(self, action):
-        action = [
-            action_ for i, action_ in enumerate(action)
-            if i in self.action_dims_to_split
-        ]
-
-        for action_ in action:
-            assert -1 <= action_ <= 1
-
-        pow = 1
-        for num_colors in self.colors_per_action_dim:
-            pow *= num_colors
-        action_idx = 0
-
-        for num_colors, action_ in zip(self.colors_per_action_dim, action):
-            delta = 2 / num_colors
-            action_idx += (
-                    int((action_ + (1 - 1e-6)) / delta) * (pow // num_colors))
-            pow //= num_colors
-
-        return action_idx
-
-
     def _get_background_image(self, time_step, action, reward):
         if ((action is None and reward is None)
                 or self.evil_level is EvilEnum.RANDOM):
@@ -231,17 +317,20 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
             color_grid = np.take_along_axis(
                 self._color_grid, random_idx, 2).squeeze()
         elif self.evil_level is EvilEnum.MAXIMUM_EVIL:
-            reward_idx = self._get_reward_idx(reward)
-            action_idx = self._get_action_idx(action)
+            reward_idx = _get_reward_idx(
+                reward, self.reward_range, self.colors_per_reward_range)
+            action_idx = _get_action_idx(
+                action, self.action_dims_to_split, self.colors_per_action_dim)
             color_grid = self._color_grid[
                  :, :,
-                 (reward_idx * len(self.colors_per_action_dim)) + action_idx,
+                 reward_idx * self.num_action_indices + action_idx,
                  :]
         elif self.evil_level is EvilEnum.EVIL_REWARD:
             reward_idx = self._get_reward_idx(reward)
             color_grid = self._color_grid[:, :, reward_idx, :]
         elif self.evil_level is EvilEnum.EVIL_ACTION:
-            action_idx = self._get_action_idx(action)
+            action_idx = _get_action_idx(
+                action, self.action_dims_to_split, self.colors_per_action_dim)
             color_grid = self._color_grid[:, :, action_idx, :]
         elif self.evil_level is EvilEnum.EVIL_SEQUENCE:
             step_idx = time_step % self.num_colors_per_cell
@@ -252,25 +341,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         else:
             raise ValueError(f'{self.evil_level} not supported.')
 
-        bg_image = color_grid
-        bg_image = np.repeat(
-            bg_image, self._height // self.num_cells_per_dim, axis=0)
-        bg_image = np.concatenate([
-            bg_image,
-            np.repeat(
-                bg_image[-1:, ...],
-                self._height % self.num_cells_per_dim,
-                axis=0)
-        ], axis=0)
-        bg_image = np.repeat(
-            bg_image, self._width // self.num_cells_per_dim, axis=1)
-        bg_image = np.concatenate([
-            bg_image,
-            np.repeat(
-                bg_image[:, -1:, :],
-                self._width % self.num_cells_per_dim,
-                axis=1)
-        ], axis=1)
-        return bg_image
+        return _get_background_image_from_color_grid(
+            color_grid, self._height, self._width, self.num_cells_per_dim)
 
 
