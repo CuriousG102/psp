@@ -44,21 +44,21 @@ def _split_reward_space(reward_range, num_colors, max_evil):
 
 
 def _get_min_colors_needed(evil_level, reward_range, action_dims_to_split):
-    if evil_level == EvilEnum.MAXIMUM_EVIL:
+    if evil_level is EvilEnum.MAXIMUM_EVIL:
         return len(reward_range) * 2 ** len(action_dims_to_split)
-    elif evil_level == EvilEnum.EVIL_REWARD:
+    elif evil_level is EvilEnum.EVIL_REWARD:
         num_non_single = sum(isinstance(r, tuple) for r in reward_range)
         num_single = len(reward_range) - num_non_single
         return 2 * num_non_single + num_single
-    elif evil_level == EvilEnum.EVIL_ACTION:
+    elif evil_level is EvilEnum.EVIL_ACTION:
         return 2 ** len(action_dims_to_split)
-    elif evil_level == EvilEnum.EVIL_SEQUENCE:
+    elif evil_level is EvilEnum.EVIL_SEQUENCE:
         return 2
-    elif evil_level == EvilEnum.MINIMUM_EVIL:
+    elif evil_level is EvilEnum.MINIMUM_EVIL:
         return 2
-    elif evil_level == EvilEnum.RANDOM:
+    elif evil_level is EvilEnum.RANDOM:
         return 2
-    elif evil_level == EvilEnum.NONE:
+    elif evil_level is EvilEnum.NONE:
         return 0
     else:
         raise ValueError(f'{evil_level} not implemented.')
@@ -246,7 +246,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
                 f'{num_colors_per_cell} insufficient for minimum colors '
                 f'needed {min_colors_needed}')
 
-        if evil_level == EvilEnum.MAXIMUM_EVIL:
+        if evil_level is EvilEnum.MAXIMUM_EVIL:
             self.colors_per_action_dim, self.colors_per_reward_range = (
                 _get_colors_for_action_and_reward_max_evil(
                     self.num_colors_per_cell,
@@ -257,10 +257,10 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
             self.num_action_indices = 1
             for n in self.colors_per_action_dim:
                 self.num_action_indices *= n
-        elif evil_level == EvilEnum.EVIL_REWARD:
+        elif evil_level is EvilEnum.EVIL_REWARD:
             self.colors_per_reward_range = _split_reward_space(
                 self.reward_range, self.num_colors_per_cell, False)
-        elif evil_level == EvilEnum.EVIL_ACTION:
+        elif evil_level is EvilEnum.EVIL_ACTION:
             self.colors_per_action_dim = _get_colors_for_evil_action(
                 self.num_colors_per_cell, self.action_dims_to_split)
 
@@ -288,6 +288,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
 
         # set seed
         self.seed(seed=task_kwargs.get('random', 1))
+        self.num_steps_taken = 0
 
     def _get_obs(self, time_step, action, reward):
         if self._from_pixels:
@@ -308,6 +309,10 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
 
         return obs
 
+    def reset(self):
+        self.num_steps_taken = 0
+        return super().reset()
+
     def _get_background_image(self, time_step, action, reward):
         if ((action is None and reward is None)
                 or self.evil_level is EvilEnum.RANDOM):
@@ -326,20 +331,23 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
                  reward_idx * self.num_action_indices + action_idx,
                  :]
         elif self.evil_level is EvilEnum.EVIL_REWARD:
-            reward_idx = self._get_reward_idx(reward)
+            reward_idx = _get_reward_idx(
+                reward, self.reward_range, self.colors_per_reward_range)
             color_grid = self._color_grid[:, :, reward_idx, :]
         elif self.evil_level is EvilEnum.EVIL_ACTION:
             action_idx = _get_action_idx(
                 action, self.action_dims_to_split, self.colors_per_action_dim)
             color_grid = self._color_grid[:, :, action_idx, :]
         elif self.evil_level is EvilEnum.EVIL_SEQUENCE:
-            step_idx = time_step % self.num_colors_per_cell
+            step_idx = self.num_steps_taken % self.num_colors_per_cell
             color_grid = self._color_grid[:, :, step_idx, :]
         elif self.evil_level is EvilEnum.MINIMUM_EVIL:
             random_idx = np.random.randint(self.num_colors_per_cell)
             color_grid = self._color_grid[:, :, random_idx, :]
         else:
             raise ValueError(f'{self.evil_level} not supported.')
+
+        self.num_steps_taken += 1
 
         return _get_background_image_from_color_grid(
             color_grid, self._height, self._width, self.num_cells_per_dim)
