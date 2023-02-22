@@ -1,11 +1,11 @@
 import os
 import json
-import dmc2gym
 import tensorflow as tf
-from tensorflow.keras.mixed_precision import experimental as prec
+from tensorflow.keras import mixed_precision as prec
 
-import tools
-import wrappers
+from tia.Dreamer import tools
+from tia.Dreamer import dmc2gym
+from tia.Dreamer import wrappers
 
 def preprocess(obs, config):
     dtype = prec.global_policy().compute_dtype

@@ -232,7 +232,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         self.num_cells_per_dim = num_cells_per_dim
         self.action_dims_to_split = action_dims_to_split
         if domain_name == 'cheetah' and task_name == 'run':
-            self.reward_range = [(0, 1,)]
+            self.reward_range = [(0, 10,)]
         elif domain_name == 'hopper' and task_name == 'stand':
             self.reward_range = [0, (.8, 1)]
         else:
