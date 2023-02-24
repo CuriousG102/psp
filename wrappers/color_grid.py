@@ -8,10 +8,10 @@ from tia.Dreamer.dmc2gym import wrappers
 import tia.Dreamer.local_dm_control_suite as suite
 
 
-def _split_action_space(action_dims, num_colors):
+def _split_action_space(action_dims, num_colors, power):
     # TODO: Add support for more variation in the future.
-    assert num_colors == 2 ** len(action_dims)
-    return [2] * len(action_dims)
+    assert num_colors == power ** len(action_dims)
+    return [power] * len(action_dims)
 
 
 def _split_reward_space(reward_range, num_colors, max_evil):
@@ -43,15 +43,16 @@ def _split_reward_space(reward_range, num_colors, max_evil):
     return colors_per_range
 
 
-def _get_min_colors_needed(evil_level, reward_range, action_dims_to_split):
+def _get_min_colors_needed(
+        evil_level, reward_range, action_dims_to_split, action_power):
     if evil_level is EvilEnum.MAXIMUM_EVIL:
-        return len(reward_range) * 2 ** len(action_dims_to_split)
+        return len(reward_range) * action_power ** len(action_dims_to_split)
     elif evil_level is EvilEnum.EVIL_REWARD:
         num_non_single = sum(isinstance(r, tuple) for r in reward_range)
         num_single = len(reward_range) - num_non_single
         return 2 * num_non_single + num_single
     elif evil_level is EvilEnum.EVIL_ACTION:
-        return 2 ** len(action_dims_to_split)
+        return action_power ** len(action_dims_to_split)
     elif evil_level is EvilEnum.EVIL_SEQUENCE:
         return 2
     elif evil_level is EvilEnum.MINIMUM_EVIL:
@@ -72,8 +73,8 @@ def _get_num_colors_log_message(num_colors_per_cell, extra):
 
 
 def _get_colors_for_action_and_reward_max_evil(
-        num_colors_per_cell, action_dims_to_split, reward_range):
-    colors_for_action = 2 ** len(action_dims_to_split)
+        num_colors_per_cell, action_dims_to_split, reward_range, action_power):
+    colors_for_action = action_power ** len(action_dims_to_split)
     colors_for_reward = num_colors_per_cell // colors_for_action
     total = colors_for_action * colors_for_reward
     if total < num_colors_per_cell:
@@ -84,17 +85,20 @@ def _get_colors_for_action_and_reward_max_evil(
         logging.warning(
             _get_num_colors_log_message(num_colors_per_cell, extra))
     return (
-        _split_action_space(action_dims_to_split, colors_for_action),
+        _split_action_space(
+            action_dims_to_split, colors_for_action, power=action_power),
         _split_reward_space(reward_range, colors_for_reward, True))
 
 
-def _get_colors_for_evil_action(num_colors_per_cell, action_dims_to_split):
-    colors_for_action = 2 ** len(action_dims_to_split)
+def _get_colors_for_evil_action(
+        num_colors_per_cell, action_dims_to_split, power):
+    colors_for_action = power ** len(action_dims_to_split)
     if colors_for_action < num_colors_per_cell:
         extra = num_colors_per_cell - colors_for_action
         logging.warning(
             _get_num_colors_log_message(num_colors_per_cell, extra))
-    return _split_action_space(action_dims_to_split, num_colors_per_cell)
+    return _split_action_space(
+        action_dims_to_split, num_colors_per_cell, power=power)
 
 
 def _get_reward_idx(reward, reward_range, colors_per_reward_range):
@@ -193,6 +197,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         num_colors_per_cell,
         evil_level,
         action_dims_to_split=[],
+        action_power=2,
         task_kwargs=None,
         visualize_reward={},
         from_pixels=False,
@@ -231,6 +236,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         self.num_colors_per_cell = num_colors_per_cell
         self.num_cells_per_dim = num_cells_per_dim
         self.action_dims_to_split = action_dims_to_split
+        self.action_power = action_power
         if domain_name == 'cheetah' and task_name == 'run':
             self.reward_range = [(0, 10,)]
         elif domain_name == 'hopper' and task_name == 'stand':
@@ -240,7 +246,8 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
             raise ValueError('Other tasks not supported')
 
         min_colors_needed = _get_min_colors_needed(
-            evil_level, self.reward_range, self.action_dims_to_split)
+            evil_level, self.reward_range, self.action_dims_to_split,
+            self.action_power)
         if self.num_colors_per_cell < min_colors_needed:
             raise ValueError(
                 f'{num_colors_per_cell} insufficient for minimum colors '
@@ -251,7 +258,8 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
                 _get_colors_for_action_and_reward_max_evil(
                     self.num_colors_per_cell,
                     self.action_dims_to_split,
-                    self.reward_range
+                    self.reward_range,
+                    self.action_power
                 )
             )
             self.num_action_indices = 1
@@ -262,7 +270,8 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
                 self.reward_range, self.num_colors_per_cell, False)
         elif evil_level is EvilEnum.EVIL_ACTION:
             self.colors_per_action_dim = _get_colors_for_evil_action(
-                self.num_colors_per_cell, self.action_dims_to_split)
+                self.num_colors_per_cell, self.action_dims_to_split,
+                self.action_power)
 
         np.random.seed(task_kwargs.get('random', 1))
         self._color_grid = np.random.randint(255, size=[

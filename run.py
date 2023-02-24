@@ -61,6 +61,7 @@ def make_env(config, writer, prefix, datadir, store):
                 'num_colors_per_cell': config.num_colors_per_cell,
                 'evil_level': EVIL_CHOICES[config.evil_level],
                 'action_dims_to_split': config.action_dims_to_split,
+                'action_power': config.action_power,
                 'environment_kwargs': None,
                 'visualize_reward': False,
                 'from_pixels': True,
@@ -177,6 +178,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_colors_per_cell', type=int, required=True)
     parser.add_argument(
         '--evil_level', choices=list(EVIL_CHOICES.keys()), required=True)
+    parser.add_argument(
+        '--action_power', type=int, required=True
+    )
     args, remaining = parser.parse_known_args()
     config_path = 'tia/Dreamer/train_configs/' + args.method + '.yaml'
     configs = yaml.safe_load(
