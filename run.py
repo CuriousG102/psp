@@ -69,6 +69,7 @@ def make_env(config, writer, prefix, datadir, store):
                 'width': config.image_size,
                 'camera_id': 0,
                 'frame_skip': config.action_repeat,
+                'no_agent': config.no_agent,
             },
         )
     env = gym.make(env_id)
@@ -181,6 +182,9 @@ if __name__ == '__main__':
     parser.add_argument(
         '--action_power', type=int, required=True
     )
+    parser.add_argument('--no_agent', action='store_true')
+    parser.add_argument('--agent', dest='no_agent', action='store_false')
+    parser.set_defaults(no_agent=False)
     args, remaining = parser.parse_known_args()
     config_path = 'tia/Dreamer/train_configs/' + args.method + '.yaml'
     configs = yaml.safe_load(

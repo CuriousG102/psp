@@ -198,6 +198,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         evil_level,
         action_dims_to_split=[],
         action_power=2,
+        no_agent=False,
         task_kwargs=None,
         visualize_reward={},
         from_pixels=False,
@@ -237,6 +238,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         self.num_cells_per_dim = num_cells_per_dim
         self.action_dims_to_split = action_dims_to_split
         self.action_power = action_power
+        self.no_agent = no_agent
         if domain_name == 'cheetah' and task_name == 'run':
             self.reward_range = [(0, 10,)]
         elif domain_name == 'hopper' and task_name == 'stand':
@@ -301,18 +303,21 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
 
     def _get_obs(self, time_step, action, reward):
         if self._from_pixels:
-            obs = self.render(
-                height=self._height,
-                width=self._width,
-                camera_id=self._camera_id
-            )
-            if self.evil_level != EvilEnum.NONE:
-                mask = np.logical_and(
-                    (obs[:, :, 2] > obs[:, :, 1]),
-                    (obs[:, :, 2] > obs[:, :, 0]))  # hardcoded for dmc
-                bg = self._get_background_image(time_step, action, reward)
-                obs[mask] = bg[mask]
-                obs = obs.copy()
+            bg = self._get_background_image(time_step, action, reward)
+            if not self.no_agent:
+                obs = self.render(
+                    height=self._height,
+                    width=self._width,
+                    camera_id=self._camera_id
+                )
+                if self.evil_level != EvilEnum.NONE:
+                    mask = np.logical_and(
+                        (obs[:, :, 2] > obs[:, :, 1]),
+                        (obs[:, :, 2] > obs[:, :, 0]))  # hardcoded for dmc
+                    obs[mask] = bg[mask]
+                    obs = obs.copy()
+            else:
+                obs = bg
         else:
             obs = wrappers._flatten_obs(time_step.observation)
 
