@@ -18,6 +18,19 @@ from .abc import AutoResetEnvBase
 from .utils import split_seed
 from .interaction import env_interact_random_actor, env_interact_with_model, EnvInteractData
 
+from wrappers import color_grid
+
+
+EVIL_CHOICES = {
+    'max': color_grid.EvilEnum.MAXIMUM_EVIL,
+    'reward': color_grid.EvilEnum.EVIL_REWARD,
+    'action': color_grid.EvilEnum.EVIL_ACTION,
+    'sequence': color_grid.EvilEnum.EVIL_SEQUENCE,
+    'minimum': color_grid.EvilEnum.MINIMUM_EVIL,
+    'random': color_grid.EvilEnum.RANDOM,
+    'none': color_grid.EvilEnum.NONE
+}
+
 
 class EnvKind(enum.Enum):
     dmc = enum.auto()
@@ -25,29 +38,43 @@ class EnvKind(enum.Enum):
     old_robodesk = enum.auto()
 
     @staticmethod
-    def create(kind, spec: str, action_repeat: int, max_episode_length: int, *, for_storage: bool,
-               seed: int, batch_shape=()) -> AutoResetEnvBase:
+    def create(kind,
+               spec: str,
+               action_repeat: int,
+               max_episode_length: int,
+               num_cells_per_dim: int,
+               num_colors_per_cell: int,
+               evil_level: str,
+               action_dims_to_split: List[int],
+               action_power: int,
+               no_agent: bool,
+               *, for_storage: bool,
+               seed: int,
+               batch_shape=()) -> AutoResetEnvBase:
         if kind is EnvKind.dmc:
             from .dmc import make_env
-        elif kind is EnvKind.robodesk:
-            from .robodesk import make_env
         else:
-            # kind is EnvKind.old_robodesk
-            def make_env(spec: str, observation_output_kind: AutoResetEnvBase.ObsOutputKind,
-                         action_repeat: int, max_episode_length: int, *, seed: int, batch_shape=()):
-                from .robodesk_old import parse_RoboDeskEnv
-                task, noise_spec = spec.rsplit('_', 1)
-                assert noise_spec == 'noisy'
-                env = f"robodesk_{task.replace('_', '-')}_variant=three-neartv-bright_button=NoistyCorrelated_gL=green-light,tv-green_objL=RangeExtOffset_envL=Noisyy_cam=0.3>0.65_res=96_noiseV=0.5_sliderAlph=1_views=lessfar-topview_tv=Video2SharpContrast-FS1-Roll1"
-                return parse_RoboDeskEnv(env, observation_output_kind, seed, max_episode_length, action_repeat, batch_shape)
+            raise ValueError('oopsie whoopsie')
 
         observation_output_kind: AutoResetEnvBase.ObsOutputKind
         if for_storage:
             observation_output_kind = AutoResetEnvBase.ObsOutputKind.image_uint8
         else:
             observation_output_kind = AutoResetEnvBase.ObsOutputKind.image_float32
-        return make_env(spec, observation_output_kind=observation_output_kind, action_repeat=action_repeat,
-                        max_episode_length=max_episode_length, seed=seed, batch_shape=batch_shape)
+        return make_env(
+            spec,
+            observation_output_kind=observation_output_kind,
+            action_repeat=action_repeat,
+            max_episode_length=max_episode_length,
+            seed=seed,
+            batch_shape=batch_shape,
+            num_cells_per_dim=num_cells_per_dim,
+            num_colors_per_cell=num_colors_per_cell,
+            evil_level=evil_level,
+            action_dims_to_split=action_dims_to_split,
+            action_power=action_power,
+            no_agent=no_agent
+        )
 
 
 
@@ -63,6 +90,12 @@ class EnvConfig:
     spec: str = MISSING
     action_repeat: int = attrs.field(default=2, validator=attrs.validators.gt(0))
     max_episode_length: int = attrs.field(default=1000, validator=attrs.validators.gt(0))
+    num_cells_per_dim: int = attrs.field(default=16, validator=attrs.validators.gt(0))
+    num_colors_per_cell: int = attrs.field(default=11664, validator=attrs.validators.gt(0))
+    evil_level: str = attrs.field(default='max')
+    action_dims_to_split: List[int] = attrs.field(default=[0, 1, 2, 3, 4, 5])
+    action_power: int = attrs.field(default=3, validator=attrs.validators.gt(0))
+    no_agent: bool = attrs.field(default=False)
 
 
 

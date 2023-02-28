@@ -50,6 +50,7 @@ class DMCWrapper(core.Env):
         task_kwargs=None,
         visualize_reward={},
         from_pixels=False,
+        episode_length=None,
         height=84,
         width=84,
         camera_id=0,
@@ -64,6 +65,8 @@ class DMCWrapper(core.Env):
         self._frame_skip = frame_skip
         self._img_source = img_source
         self._resource_files = resource_files
+        self._episode_length = episode_length
+        self._steps_taken = 0
 
         # create task
         self._env = suite.load(
@@ -175,18 +178,25 @@ class DMCWrapper(core.Env):
         assert self._true_action_space.contains(action)
         reward = 0
         extra = {'internal_state': self._env.physics.get_state().copy()}
+        actual_env_steps_taken = 0
 
         for _ in range(self._frame_skip):
             time_step = self._env.step(action)
             reward += time_step.reward or 0
             done = time_step.last()
+            actual_env_steps_taken += 1
+            self._steps_taken += 1
+            done = done or (self._episode_length is not None
+                            and self._steps_taken >= self._episode_length)
             if done:
                 break
         obs = self._get_obs(time_step, action, reward)
         extra['discount'] = time_step.discount
+        extra['actual_env_steps_taken'] = actual_env_steps_taken
         return obs, reward, done, extra
 
     def reset(self):
+        self._steps_taken = 0
         time_step = self._env.reset()
         obs = self._get_obs(time_step, None, None)
         return obs
