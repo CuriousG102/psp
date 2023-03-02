@@ -127,7 +127,8 @@ class ModelTrainer(object):
             num_env_steps=self.num_env_steps,
             train_metrics=self.train_metrics,
             test_metrics=self.test_metrics,
-            data_collect_env_random_state=self.data_collect_env.get_random_state(),
+            # TODO: Re-enable.
+            # data_collect_env_random_state=self.data_collect_env.get_random_state(),
             world_model=self.world_model.state_dict(),
             model_learning=self.model_learning.state_dict(),
             policy_learning=self.policy_learning.state_dict(),
@@ -183,7 +184,7 @@ class ModelTrainer(object):
         self.num_env_steps = checkpoint['num_env_steps']
         self.train_metrics = checkpoint['train_metrics']
         self.test_metrics = checkpoint['test_metrics']
-        self.data_collect_env.set_random_state(checkpoint['data_collect_env_random_state'])
+        # self.data_collect_env.set_random_state(checkpoint['data_collect_env_random_state'])
 
         if 'model_optimizer' in checkpoint.keys():
             # BC old
@@ -367,7 +368,8 @@ class ModelTrainer(object):
 
         # actual testing begins
 
-        self.test_env.seed(self.test_env_seed)
+        # TODO: Add back seeding.
+        # self.test_env.seed(self.test_env_seed)
         interaction = env_interact_with_model(self.test_env, self.world_model, self.test_env.max_episode_length,
                                               train=False, tqdm_desc='Test')
 

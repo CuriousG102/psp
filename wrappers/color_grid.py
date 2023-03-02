@@ -206,7 +206,8 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         width=84,
         camera_id=0,
         frame_skip=1,
-        environment_kwargs=None
+        environment_kwargs=None,
+        episode_length=None
     ):
         assert 'random' in task_kwargs, 'please specify a seed, for deterministic behaviour'
         self._from_pixels = from_pixels
@@ -214,6 +215,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         self._width = width
         self._camera_id = camera_id
         self._frame_skip = frame_skip
+        self._episode_length = episode_length
 
         # create task
         self._env = suite.load(

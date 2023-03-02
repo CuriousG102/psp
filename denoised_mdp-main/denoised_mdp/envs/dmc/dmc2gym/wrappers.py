@@ -115,15 +115,18 @@ class DMCWrapper(core.Env, EnvBase):
             environment_kwargs=environment_kwargs
         )
 
+        self._observation_output_kind = observation_output_kind
+
         self._episode_length = episode_length
 
         # create observation space
-        self._observation_space = EnvBase.ObsOutputKind.get_observation_space(observation_output_kind, height, width)
+        self._observation_space = EnvBase.ObsOutputKind.get_observation_space(
+            observation_output_kind, height, width)
 
         self._steps_taken = 0
 
-    def __getattr__(self, name):
-        return getattr(self.cg_wrapper._env, name)
+    # def __getattr__(self, name):
+    #     return getattr(self.cg_wrapper._env, name)
 
     def _get_obs(self, timestep, action, reward):
         obs = self.cg_wrapper._get_obs(timestep, action, reward)
@@ -133,10 +136,10 @@ class DMCWrapper(core.Env, EnvBase):
 
     def _convert_action(self, action):
         action = action.astype(np.float64)
-        true_delta = self._true_action_space.high - self._true_action_space.low
-        norm_delta = self._norm_action_space.high - self._norm_action_space.low
-        action = (action - self._norm_action_space.low) / norm_delta
-        action = action * true_delta + self._true_action_space.low
+        true_delta = self.cg_wrapper._true_action_space.high - self.cg_wrapper._true_action_space.low
+        norm_delta = self.cg_wrapper._norm_action_space.high - self.cg_wrapper._norm_action_space.low
+        action = (action - self.cg_wrapper._norm_action_space.low) / norm_delta
+        action = action * true_delta + self.cg_wrapper._true_action_space.low
         action = action.astype(np.float32)
         return action
 
@@ -146,43 +149,29 @@ class DMCWrapper(core.Env, EnvBase):
 
     @property
     def internal_state_space(self):
-        return self._internal_state_space
+        return self.cg_wrapper._internal_state_space
 
     @property
     def action_space(self):
-        return self._norm_action_space
+        return self.cg_wrapper._norm_action_space
 
     def sample_random_action(self, size=(), np_rng=None):
         if np_rng is None:
             np_rng = np.random
         return torch.as_tensor(np_rng.uniform(-1, 1, size=tuple(size) + tuple(self.action_shape)), dtype=torch.float32)
 
-    def _step_env(self, env, action):
-        with contextlib.ExitStack() as stack:
-            if self._sensor_noise_mult != 0:
-                assert env.physics.NUM_NOISES == 1
-                # background
-                background = self._bg_source.get_image()
-                patch_h = background.shape[0] // 4
-                patch_w = background.shape[1] // 4
-                patch = background[
-                    (patch_h // 2) : (patch_h // 2) + patch_h,
-                    (patch_w // 2) : (patch_w // 2) + patch_w,
-                ]
-                noise = (patch.mean() / 255 - 0.5) * self._sensor_noise_mult
-                stack.enter_context(env.physics.sensor_noise([noise]))
-            ts = env.step(action)
-        return ts
-
     def step(self, action):
         if isinstance(action, torch.Tensor):
             action = action.detach()
         action = np.asarray(action, dtype=np.float32)
-        obs, reward, done, extra = self.cg_wrapper.step(action)
+        obs, reward, done, extra = self.cg_wrapper.step(self._convert_action(action))
+        obs = self.ndarray_uint8_image_to_observation(obs, target_shape=None)
         return obs, reward, done, EnvBase.Info(extra['actual_env_steps_taken'])
 
     def reset(self) -> Tuple[torch.Tensor, EnvBase.Info]:
-        return self.cg_wrapper.reset(), EnvBase.Info(0)
+        return (
+            self.ndarray_uint8_image_to_observation(self.cg_wrapper.reset()),
+            EnvBase.Info(0))
 
     def render(self, mode='rgb_array', height=None, width=None, camera_id=0):
         return self.cg_wrapper.render(

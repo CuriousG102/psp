@@ -147,18 +147,6 @@ class EnvBase(abc.ABC):
     def render(self):
         pass
 
-    @abc.abstractmethod
-    def get_random_state(self) -> Any:
-        pass
-
-    @abc.abstractmethod
-    def set_random_state(self, random_state):
-        pass
-
-    @abc.abstractmethod
-    def seed(self, seed: Union[int, np.random.SeedSequence]):
-        pass
-
     def close(self):
         pass
 

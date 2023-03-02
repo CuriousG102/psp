@@ -66,11 +66,12 @@ class EnvKind(enum.Enum):
             observation_output_kind=observation_output_kind,
             action_repeat=action_repeat,
             max_episode_length=max_episode_length,
-            seed=seed,
+            # TODO: Populate seed properly.
+            seed=42,
             batch_shape=batch_shape,
             num_cells_per_dim=num_cells_per_dim,
             num_colors_per_cell=num_colors_per_cell,
-            evil_level=evil_level,
+            evil_level=EVIL_CHOICES[evil_level],
             action_dims_to_split=action_dims_to_split,
             action_power=action_power,
             no_agent=no_agent
