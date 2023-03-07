@@ -198,6 +198,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         evil_level,
         action_dims_to_split=[],
         action_power=2,
+        action_splits=None,
         no_agent=False,
         task_kwargs=None,
         visualize_reward={},
@@ -210,6 +211,11 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         episode_length=None
     ):
         assert 'random' in task_kwargs, 'please specify a seed, for deterministic behaviour'
+        assert action_splits is None or action_power is None
+        assert action_splits is None or evil_level is EvilEnum.EVIL_ACTION
+        assert (
+                action_splits is None
+                or len(action_splits) == len(action_dims_to_split))
         self._from_pixels = from_pixels
         self._height = height
         self._width = width
@@ -249,13 +255,14 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
             # TODO: Also support walker run.
             raise ValueError('Other tasks not supported')
 
-        min_colors_needed = _get_min_colors_needed(
-            evil_level, self.reward_range, self.action_dims_to_split,
-            self.action_power)
-        if self.num_colors_per_cell < min_colors_needed:
-            raise ValueError(
-                f'{num_colors_per_cell} insufficient for minimum colors '
-                f'needed {min_colors_needed}')
+        if action_splits is None:
+            min_colors_needed = _get_min_colors_needed(
+                evil_level, self.reward_range, self.action_dims_to_split,
+                self.action_power)
+            if self.num_colors_per_cell < min_colors_needed:
+                raise ValueError(
+                    f'{num_colors_per_cell} insufficient for minimum colors '
+                    f'needed {min_colors_needed}')
 
         if evil_level is EvilEnum.MAXIMUM_EVIL:
             self.colors_per_action_dim, self.colors_per_reward_range = (
@@ -273,9 +280,16 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
             self.colors_per_reward_range = _split_reward_space(
                 self.reward_range, self.num_colors_per_cell, False)
         elif evil_level is EvilEnum.EVIL_ACTION:
-            self.colors_per_action_dim = _get_colors_for_evil_action(
-                self.num_colors_per_cell, self.action_dims_to_split,
-                self.action_power)
+            if action_splits is not None:
+                self.colors_per_action_dim = action_splits
+                total = 1
+                for i in self.colors_per_action_dim:
+                    total *= i
+                assert total == num_colors_per_cell
+            else:
+                self.colors_per_action_dim = _get_colors_for_evil_action(
+                    self.num_colors_per_cell, self.action_dims_to_split,
+                    self.action_power)
 
         np.random.seed(task_kwargs.get('random', 1))
         self._color_grid = np.random.randint(255, size=[

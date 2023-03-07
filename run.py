@@ -62,6 +62,7 @@ def make_env(config, writer, prefix, datadir, store):
                 'evil_level': EVIL_CHOICES[config.evil_level],
                 'action_dims_to_split': config.action_dims_to_split,
                 'action_power': config.action_power,
+                'action_splits': config.action_splits,
                 'environment_kwargs': None,
                 'visualize_reward': False,
                 'from_pixels': True,
@@ -182,6 +183,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--action_power', type=int, required=True
     )
+    parser.add_argument('--action_splits', nargs='*', type=int)
     parser.add_argument('--no_agent', action='store_true')
     parser.add_argument('--agent', dest='no_agent', action='store_false')
     parser.set_defaults(no_agent=False)
@@ -197,6 +199,8 @@ if __name__ == '__main__':
         parser.add_argument(
             f'--{key}', type=tools.args_type(value), default=value)
     all_args = vars(args)
+    if all_args['action_splits']:
+        all_args['action_power'] = None
     all_args.update(vars(parser.parse_args(remaining)))
     class Config:
         def __init__(self, all_args):
