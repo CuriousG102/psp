@@ -319,21 +319,22 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
 
     def _get_obs(self, time_step, action, reward):
         if self._from_pixels:
-            bg = self._get_background_image(time_step, action, reward)
+            assert not self.no_agent and self.evil_level is EvilEnum.NONE
             if not self.no_agent:
                 obs = self.render(
                     height=self._height,
                     width=self._width,
                     camera_id=self._camera_id
                 )
-                if self.evil_level != EvilEnum.NONE:
+                if self.evil_level is not EvilEnum.NONE:
+                    bg = self._get_background_image(time_step, action, reward)
                     mask = np.logical_and(
                         (obs[:, :, 2] > obs[:, :, 1]),
                         (obs[:, :, 2] > obs[:, :, 0]))  # hardcoded for dmc
                     obs[mask] = bg[mask]
                     obs = obs.copy()
             else:
-                obs = bg
+                obs = self._get_background_image(time_step, action, reward)
         else:
             obs = wrappers._flatten_obs(time_step.observation)
 
