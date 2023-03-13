@@ -3,7 +3,7 @@ from tensorflow.keras import layers as tfkl
 from tensorflow.keras import mixed_precision as prec
 
 import elements
-import common
+from dreamer_pro_main.DreamerPro.common import common
 import expl
 
 

@@ -18,6 +18,7 @@ defaults:
   precision: 16
   jit: True
 
+
   # Natural Background
   bg_path_train: '../kinetics400/videos/train'
   bg_path_test: '../kinetics400/videos/test'
@@ -77,6 +78,68 @@ defaults:
   disag_offset: 1
   disag_action_cond: True
   expl_model_loss: kl
+
+  # Evil
+  action_dims_to_split: [ 0, 1, 2, 3, 4, 5 ]
+  num_cells_per_dim: 16
+  num_colors_per_cell: 11664
+  evil_level: max
+  action_power: 3
+
+max_evil:
+
+  action_dims_to_split: [0, 1, 2, 3, 4, 5]
+  num_cells_per_dim: 16
+  num_colors_per_cell: 11664
+  evil_level: max
+  action_power: 3
+
+max_evil_reduced:
+
+  action_dims_to_split: [0, 1, 2, 3, 4]
+  num_cells_per_dim: 16
+  num_colors_per_cell: 2430
+  evil_level: max
+  action_power: 3
+
+action_evil:
+  action_dims_to_split: [0, 1, 2, 3]
+  num_cells_per_dim: 16
+  num_colors_per_cell: 2401
+  evil_level: action
+  action_power: 7
+
+sequence_evil_smol:
+
+  evil_level: sequence
+
+action_cross_sequence_evil:
+
+  evil_level: action_cross_sequence
+  num_colors_per_cell: 2000
+  action_power: 2
+  action_dims_to_split: [0]
+
+action_cross_sequence_evil_larger:
+
+  evil_level: action_cross_sequence
+  num_colors_per_cell: 3000
+  action_power: 3
+  action_dims_to_split: [ 0 ]
+
+action_cross_sequence_evil_larger_2:
+
+  evil_level: action_cross_sequence
+  num_colors_per_cell: 4000
+  action_power: 2
+  action_dims_to_split: [0, 1]
+
+action_cross_sequence_evil_larger_3:
+
+  evil_level: action_cross_sequence
+  num_colors_per_cell: 2500
+  action_power: 4
+  action_dims_to_split: [ 0 ]
 
 atari:
 

@@ -55,6 +55,8 @@ def _get_min_colors_needed(
         return action_power ** len(action_dims_to_split)
     elif evil_level is EvilEnum.EVIL_SEQUENCE:
         return 2
+    elif evil_level is EvilEnum.EVIL_ACTION_CROSS_SEQUENCE:
+        return 2 * action_power ** len(action_dims_to_split)
     elif evil_level is EvilEnum.MINIMUM_EVIL:
         return 2
     elif evil_level is EvilEnum.RANDOM:
@@ -88,6 +90,26 @@ def _get_colors_for_action_and_reward_max_evil(
         _split_action_space(
             action_dims_to_split, colors_for_action, power=action_power),
         _split_reward_space(reward_range, colors_for_reward, True))
+
+
+def _get_colors_for_action_and_sequence_evil(
+        num_colors_per_cell, action_dims_to_split, action_power):
+    # TODO: Allow crossing anything, refactor all the logic in this file.
+    colors_for_action = action_power ** len(action_dims_to_split)
+    colors_for_sequence = num_colors_per_cell // colors_for_action
+    total = colors_for_action * colors_for_sequence
+    if total < num_colors_per_cell:
+        # TODO: Test this logic
+        extra = (
+                num_colors_per_cell
+                - colors_for_action * colors_for_sequence)
+        logging.warning(
+            _get_num_colors_log_message(num_colors_per_cell, extra))
+    return(
+        _split_action_space(
+            action_dims_to_split, colors_for_action, power=action_power),
+        colors_for_sequence
+    )
 
 
 def _get_colors_for_evil_action(
@@ -182,6 +204,7 @@ class EvilEnum(enum.Enum):
     MAXIMUM_EVIL = enum.auto()
     EVIL_REWARD = enum.auto()
     EVIL_ACTION = enum.auto()
+    EVIL_ACTION_CROSS_SEQUENCE = enum.auto()
     EVIL_SEQUENCE = enum.auto()
     MINIMUM_EVIL = enum.auto()
     RANDOM = enum.auto()
@@ -290,6 +313,10 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
                 self.colors_per_action_dim = _get_colors_for_evil_action(
                     self.num_colors_per_cell, self.action_dims_to_split,
                     self.action_power)
+        elif evil_level is EvilEnum.EVIL_ACTION_CROSS_SEQUENCE:
+            self.colors_per_action_dim, self.num_colors_for_sequence = (
+                _get_colors_for_action_and_sequence_evil(
+                    num_colors_per_cell, action_dims_to_split, action_power))
 
         np.random.seed(task_kwargs.get('random', 1))
         self._color_grid = np.random.randint(255, size=[
@@ -319,7 +346,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
 
     def _get_obs(self, time_step, action, reward):
         if self._from_pixels:
-            assert not self.no_agent and self.evil_level is EvilEnum.NONE
+            assert not (self.no_agent and self.evil_level is EvilEnum.NONE)
             if not self.no_agent:
                 obs = self.render(
                     height=self._height,
@@ -372,6 +399,12 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         elif self.evil_level is EvilEnum.EVIL_SEQUENCE:
             step_idx = self.num_steps_taken % self.num_colors_per_cell
             color_grid = self._color_grid[:, :, step_idx, :]
+        elif self.evil_level is EvilEnum.EVIL_ACTION_CROSS_SEQUENCE:
+            action_idx = _get_action_idx(
+                action, self.action_dims_to_split, self.colors_per_action_dim)
+            step_idx = self.num_steps_taken % self.num_colors_for_sequence
+            idx = self.num_colors_for_sequence * action_idx + step_idx
+            color_grid = self._color_grid[:, :, idx, :]
         elif self.evil_level is EvilEnum.MINIMUM_EVIL:
             random_idx = np.random.randint(self.num_colors_per_cell)
             color_grid = self._color_grid[:, :, random_idx, :]

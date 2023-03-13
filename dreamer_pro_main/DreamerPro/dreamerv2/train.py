@@ -26,10 +26,14 @@ import tensorflow as tf
 
 import agent
 import elements
-import common
+from dreamer_pro_main.DreamerPro import common
+
+from wrappers import color_grid
 
 
-configs = pathlib.Path(sys.argv[0]).parent / 'configs.yaml'
+configs = pathlib.Path(
+    '/media/hdd/Storage/distracting_benchmarks/dreamer_pro_main/'
+    'DreamerPro/dreamerv2/configs.yaml')
 configs = yaml.safe_load(configs.read_text())
 config = elements.Config(configs['defaults'])
 parsed, remaining = elements.FlagParser(configs=['defaults']).parse_known(
@@ -52,8 +56,8 @@ for gpu in tf.config.experimental.list_physical_devices('GPU'):
   tf.config.experimental.set_memory_growth(gpu, True)
 assert config.precision in (16, 32), config.precision
 if config.precision == 16:
-  from tensorflow.keras.mixed_precision import experimental as prec
-  prec.set_policy(prec.Policy('mixed_float16'))
+  from tensorflow.keras import mixed_precision as prec
+  prec.set_global_policy(prec.Policy('mixed_float16'))
 
 print('Logdir', logdir)
 train_replay = common.Replay(logdir / 'train_replay', config.replay_size)
@@ -71,10 +75,37 @@ should_log = elements.Every(config.log_every)
 should_video_train = elements.Every(config.eval_every)
 should_video_eval = elements.Every(config.eval_every)
 
+
+EVIL_CHOICES = {
+    'max': color_grid.EvilEnum.MAXIMUM_EVIL,
+    'reward': color_grid.EvilEnum.EVIL_REWARD,
+    'action': color_grid.EvilEnum.EVIL_ACTION,
+    'sequence': color_grid.EvilEnum.EVIL_SEQUENCE,
+    'action_cross_sequence': color_grid.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
+    'minimum': color_grid.EvilEnum.MINIMUM_EVIL,
+    'random': color_grid.EvilEnum.RANDOM,
+    'none': color_grid.EvilEnum.NONE
+}
+
+
 def make_env(mode):
   suite, task = config.task.split('_', 1)
   if suite == 'dmc':
     env = common.DMC(task, config.action_repeat, config.image_size)
+    env = common.NormalizeAction(env)
+  elif suite == 'colorgrid':
+    env = common.ColorGridBg(
+      task, config.action_repeat, config.image_size,
+      num_cells_per_dim=config.num_cells_per_dim,
+      num_colors_per_cell=config.num_colors_per_cell,
+      evil_level=EVIL_CHOICES[config.evil_level],
+      action_power=config.action_power,
+      action_splits=config.action_splits if 'action_splits' in config else None,
+      action_dims_to_split=config.action_dims_to_split if 'action_dims_to_split' in config else None,
+      no_agent=config.no_agent if 'no_agent' in config else False,
+      task_kwargs={'random': 42},
+      from_pixels=True,
+      visualize_reward=False)
     env = common.NormalizeAction(env)
   elif suite == 'nat':
     bg_path = config.bg_path_train if mode == 'train' else config.bg_path_test

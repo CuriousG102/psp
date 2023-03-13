@@ -28,6 +28,7 @@ EVIL_CHOICES = {
     'reward': color_grid.EvilEnum.EVIL_REWARD,
     'action': color_grid.EvilEnum.EVIL_ACTION,
     'sequence': color_grid.EvilEnum.EVIL_SEQUENCE,
+    'action_cross_sequence': color_grid.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
     'minimum': color_grid.EvilEnum.MINIMUM_EVIL,
     'random': color_grid.EvilEnum.RANDOM,
     'none': color_grid.EvilEnum.NONE

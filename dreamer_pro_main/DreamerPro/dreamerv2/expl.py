@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow_probability import distributions as tfd
 
 import agent
-import common
+from dreamer_pro_main.DreamerPro import common
 
 
 class Random(common.Module):

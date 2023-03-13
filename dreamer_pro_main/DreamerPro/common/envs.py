@@ -4,13 +4,16 @@ import threading
 import gym
 import numpy as np
 
-import common
+from . import natural_imgsource
+
+from wrappers import color_grid
 
 
 class DMC:
 
   def __init__(self, name, action_repeat=1, size=(64, 64), camera=None):
     os.environ['MUJOCO_GL'] = 'egl'
+    assert name == 'cheetah_run'
     ################################################################################
     # Implementation of Cheetah/Walker Run Sparse follows
     # https://github.com/younggyoseo/RE3
@@ -122,7 +125,7 @@ class NAT:
     files = [
         os.path.join(bg_path, f) for f in os.listdir(bg_path)
         if os.path.isfile(os.path.join(bg_path, f))]
-    self._bg_source = common.RandomVideoSource(
+    self._bg_source = natural_imgsource.RandomVideoSource(
         size, files, random_bg, max_videos, grayscale=False)
     ################################################################################
 
@@ -184,6 +187,50 @@ class NAT:
     return obs
     ################################################################################
 ################################################################################
+
+
+class ColorGridBg(color_grid.DmcColorGridWrapper):
+  def __init__(
+      self, name, action_repeat=1, size=(64, 64),
+      num_cells_per_dim=None, num_colors_per_cell=None, evil_level=None,
+      action_dims_to_split=[], action_power=2, action_splits=None,
+      no_agent=False, task_kwargs=None, visualize_reward={},
+      from_pixels=False):
+    domain, task = name.split('_')
+    super().__init__(
+      domain, task, num_cells_per_dim, num_colors_per_cell, evil_level,
+      action_dims_to_split=action_dims_to_split, action_power=action_power,
+      action_splits=action_splits, no_agent=no_agent, task_kwargs=task_kwargs,
+      visualize_reward=visualize_reward, from_pixels=from_pixels,
+      height=size[0], width=size[1], camera_id=0,
+      frame_skip=action_repeat)
+    self._size = size
+    self.observation_space = self._get_observation_space()
+    self.action_space = self._get_action_space()
+
+  def _get_observation_space(self):
+    spaces = {}
+    for key, value in self._env.observation_spec().items():
+      spaces[key] = gym.spaces.Box(
+        -np.inf, np.inf, value.shape, dtype=np.float32)
+    spaces['image'] = gym.spaces.Box(
+      0, 255, self._size + (3,), dtype=np.uint8)
+    return gym.spaces.Dict(spaces)
+
+  def _get_action_space(self):
+    spec = self._env.action_spec()
+    action = gym.spaces.Box(spec.minimum, spec.maximum, dtype=np.float32)
+    return gym.spaces.Dict({'action': action})
+
+  def _convert_action(self, action):
+    action = action['action']
+    assert np.isfinite(action).all(), action
+    return action
+
+  def _wrap_obs(self, time_step, obs):
+    new_obs = dict(time_step.observation)
+    new_obs['image'] = obs
+    return new_obs
 
 
 class Atari:
@@ -408,10 +455,10 @@ class ResetObs:
 
   def step(self, action):
     obs, reward, done, info = self._env.step(action)
-    obs['reset'] = np.array(False, np.bool)
+    obs['reset'] = np.array(False, np.bool_)
     return obs, reward, done, info
 
   def reset(self):
     obs = self._env.reset()
-    obs['reset'] = np.array(True, np.bool)
+    obs['reset'] = np.array(True, np.bool_)
     return obs

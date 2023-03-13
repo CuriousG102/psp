@@ -124,6 +124,8 @@ class DMCWrapper(core.Env):
 
         # set seed
         self.seed(seed=task_kwargs.get('random', 1))
+        self.observation_space = self._observation_space
+        self.action_space = self._norm_action_space
 
     def __getattr__(self, name):
         return getattr(self._env, name)
@@ -147,35 +149,39 @@ class DMCWrapper(core.Env):
         return obs
 
     def _convert_action(self, action):
+        assert self._norm_action_space.contains(action)
         action = action.astype(np.float64)
         true_delta = self._true_action_space.high - self._true_action_space.low
         norm_delta = self._norm_action_space.high - self._norm_action_space.low
         action = (action - self._norm_action_space.low) / norm_delta
         action = action * true_delta + self._true_action_space.low
         action = action.astype(np.float32)
+        assert self._true_action_space.contains(action)
         return action
 
-    @property
-    def observation_space(self):
-        return self._observation_space
+    # @property
+    # def observation_space(self):
+    #     return self._observation_space
 
     @property
     def internal_state_space(self):
         return self._internal_state_space
 
-    @property
-    def action_space(self):
-        return self._norm_action_space
+    # @property
+    # def action_space(self):
+    #     return self._norm_action_space
 
     def seed(self, seed):
         self._true_action_space.seed(seed)
         self._norm_action_space.seed(seed)
         self._observation_space.seed(seed)
 
+    def _wrap_obs(self, time_step, obs):
+        return obs
+
+
     def step(self, action):
-        assert self._norm_action_space.contains(action)
         action = self._convert_action(action)
-        assert self._true_action_space.contains(action)
         reward = 0
         extra = {'internal_state': self._env.physics.get_state().copy()}
         actual_env_steps_taken = 0
@@ -191,6 +197,7 @@ class DMCWrapper(core.Env):
             if done:
                 break
         obs = self._get_obs(time_step, action, reward)
+        obs = self._wrap_obs(time_step, obs)
         extra['discount'] = time_step.discount
         extra['actual_env_steps_taken'] = actual_env_steps_taken
         return obs, reward, done, extra
@@ -199,6 +206,7 @@ class DMCWrapper(core.Env):
         self._steps_taken = 0
         time_step = self._env.reset()
         obs = self._get_obs(time_step, None, None)
+        obs = self._wrap_obs(time_step, obs)
         return obs
 
     def render(self, mode='rgb_array', height=None, width=None, camera_id=0):
