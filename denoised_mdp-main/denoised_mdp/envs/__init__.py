@@ -47,6 +47,7 @@ class EnvKind(enum.Enum):
                evil_level: str,
                action_dims_to_split: List[int],
                action_power: int,
+               action_splits: List[int],
                no_agent: bool,
                *, for_storage: bool,
                seed: int,
@@ -73,7 +74,8 @@ class EnvKind(enum.Enum):
             num_colors_per_cell=num_colors_per_cell,
             evil_level=EVIL_CHOICES[evil_level],
             action_dims_to_split=action_dims_to_split,
-            action_power=action_power,
+            action_power=action_power if not action_splits else None,
+            action_splits=action_splits if action_splits else None,
             no_agent=no_agent
         )
 
@@ -96,6 +98,7 @@ class EnvConfig:
     evil_level: str = attrs.field(default='max')
     action_dims_to_split: List[int] = attrs.field(default=[0, 1, 2, 3, 4, 5])
     action_power: int = attrs.field(default=3, validator=attrs.validators.gt(0))
+    action_splits: List[int] = attrs.field(default=[])
     no_agent: bool = attrs.field(default=False)
 
 
