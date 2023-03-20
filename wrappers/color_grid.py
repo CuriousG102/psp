@@ -79,13 +79,10 @@ def _get_colors_for_action_and_reward_max_evil(
     colors_for_action = action_power ** len(action_dims_to_split)
     colors_for_reward = num_colors_per_cell // colors_for_action
     total = colors_for_action * colors_for_reward
-    if total < num_colors_per_cell:
-        # TODO: Test this logic
-        extra = (
-                num_colors_per_cell
-                - colors_for_action * colors_for_reward)
-        logging.warning(
-            _get_num_colors_log_message(num_colors_per_cell, extra))
+    # TODO: Test this logic.
+    assert total == num_colors_per_cell, _get_num_colors_log_message(
+        num_colors_per_cell,
+        num_colors_per_cell - colors_for_action * colors_for_reward)
     return (
         _split_action_space(
             action_dims_to_split, colors_for_action, power=action_power),
@@ -98,13 +95,10 @@ def _get_colors_for_action_and_sequence_evil(
     colors_for_action = action_power ** len(action_dims_to_split)
     colors_for_sequence = num_colors_per_cell // colors_for_action
     total = colors_for_action * colors_for_sequence
-    if total < num_colors_per_cell:
-        # TODO: Test this logic
-        extra = (
-                num_colors_per_cell
-                - colors_for_action * colors_for_sequence)
-        logging.warning(
-            _get_num_colors_log_message(num_colors_per_cell, extra))
+    # TODO: Test this logic
+    assert num_colors_per_cell == total, _get_num_colors_log_message(
+        num_colors_per_cell,
+        num_colors_per_cell - colors_for_action * colors_for_sequence)
     return(
         _split_action_space(
             action_dims_to_split, colors_for_action, power=action_power),
@@ -115,10 +109,10 @@ def _get_colors_for_action_and_sequence_evil(
 def _get_colors_for_evil_action(
         num_colors_per_cell, action_dims_to_split, power):
     colors_for_action = power ** len(action_dims_to_split)
-    if colors_for_action < num_colors_per_cell:
-        extra = num_colors_per_cell - colors_for_action
-        logging.warning(
-            _get_num_colors_log_message(num_colors_per_cell, extra))
+    assert colors_for_action == num_colors_per_cell, (
+        _get_num_colors_log_message(
+            num_colors_per_cell,
+            num_colors_per_cell - colors_for_action))
     return _split_action_space(
         action_dims_to_split, num_colors_per_cell, power=power)
 
@@ -233,6 +227,137 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         environment_kwargs=None,
         episode_length=None
     ):
+        """
+        Creates a specialized instance of the TIA wrappers.DMCWrapper.
+        This version replaces the background of the wrapped DMC environment's
+        observations with a dynamic grid of colors determined from other
+        variables of the MDP. The specifics are controlled by the arguments to
+        the constructor as detailed below.
+
+        :param domain_name: DMC domain name.
+        :param task_name: DMC task name.
+        :param num_cells_per_dim: Number of cells on the horizontal and
+            vertical dimensions of the environment. So e.g. 16 begets a 16x16
+            grid of colors.
+        :param num_colors_per_cell: The number of total colors per cell. A
+            mapping of index to color is stored for each cell, which can be
+            used by the specified mapping of MDP variables to color grids.
+            In most instantiations `evil_level`, one set of MDP variables
+            maps to the same index for every cell. In that case, this
+            parameter can be more simply considered as the total number of
+            backgrounds.
+        :param evil_level: The type of mapping that will be generated between
+            MDP variables and backgrounds for the DMC environment.
+
+            `MAXIMUM_EVIL`: The cartesian product of discretized action and
+                reward spaces will be mapped to different backgrounds
+                (cell indices). The following additional arguments must be
+                specified:
+                    - `action_dims_to_split`
+                    - Either `action_power` or `action_splits`, but not both.
+                The exact algorithm for discretizing the action space is
+                described under `EVIL_ACTION`.
+                The number of colors for discretizing the reward space will be
+                determined according to the floor division of
+                `num_colors_per_cell` and the action space cardinality. The
+                algorithm for discretizing the reward space is described under
+                `EVIL_REWARD`.
+
+                We enforce that `num_colors_per_cell` matches the product of
+                the number of the number of action spaces and the number of
+                reward spaces, otherwise there will be backgrounds that are
+                never used.
+            `EVIL_REWARD`: The reward space will be discretized to match the
+                `num_colors_per_cell`. The reward space is considered as a
+                set of intervals. Intervals may only be one number (e.g.
+                you get 10. reward for hitting a target) or a range (e.g.
+                you get a certain reward proportional to your velocity,
+                capped by physics to within a certain upper bound). We
+                enforce that `num_colors_per_cell` is greater than or equal
+                to 2 times the number of range intervals plus the number of
+                single number intervals. Additionally, the environment should
+                have at least one range interval or more than one single
+                number intervals. Otherwise, this degenerates to a single
+                static background, which can be specified via other
+                `evil_level`s.
+
+                The number of individual spaces under each reward interval is
+                determined via assigning each single number interval a single
+                space, then dividing the remaining spaces evenly between the
+                range intervals. Any leftover spaces are divided round-robin
+                between the range intervals.
+            `EVIL_ACTION`: The following additional arguments must be
+                specified:
+                    - `action_dims_to_split`
+                    - Either `action_power` or `action_splits`
+                `action_dims_to_split` specifies the dimensions of the action
+                space to consider for mapping to backgrounds.
+
+                `action_power`, if set, specifies how many discrete spaces
+                each action dimension will be split into. The total number
+                of backgrounds mapped to will be
+                `action_power ** len(action_dims_to_split)`.
+
+                `action_splits`, if set, specifies how many spaces each
+                individual action dimension will be split into. The total
+                number of backgrounds mapped to will be
+                `product(action_splits)`, where
+                `product = partial(reduce, lambda x, y: x * y)`.
+
+                We enforce that `num_colors_per_cell` is equal to the number
+                of backgrounds specified by `action_dims_to_split` and
+                `action_power` or `action_splits`, as less backgrounds would
+                result in an out-of-bounds index for some actions, and more
+                backgrounds would simply result in unused backgrounds.
+            `EVIL_ACTION_CROSS_SEQUENCE`:  If set, crosses action spaces with
+                sequence positions to generate mapping to backgrounds.
+                Currently only supports `action_power`, and not
+                `action_splits`. The number of colors for discretizing the
+                sequence space will be determined according to the floor
+                division of `num_colors_per_cell` and the action space
+                cardinality, such that our action space assignments are
+                unique for a given sequence position according to
+                actionSpaceAssignmentsForStep =
+                globalSpaceActionAssignments[stepPos % numColorsForSequence].
+
+                We enforce that `num_colors_per_cell` is equal to the product
+                of the number of action spaces and number of sequence spaces,
+                otherwise there will be backgrounds that are never used.
+            `EVIL_SEQUENCE`: If set, assigns sequence positions to
+                backgrounds. If the number of steps goes beyond the number of
+                assigned backgrounds, we simply loop to the first background.
+            `MINIMUM_EVIL`: A random background is chosen on every step.
+            `RANDOM`: Each cell's color index is chosen randomly on every step.
+                Since cells are not chosen jointly, unlike other modes, this
+                is myuch like static, but the colors for each cell are chosen
+                in advance.
+            `NONE`: The background is not replaced.
+        :param action_dims_to_split: Described under `evil_level`
+            `EVIL_ACTION`. Action dimensions to be considered for action to
+            background mapping.
+        :param action_power: Described under `evil_level`
+            `EVIL_ACTION`. Number of spaces to divide each selected action
+            dimension into.
+        :param action_splits: Described under `evil_level`
+            `EVIL_ACTION`. Specifies how many spaces each individual action
+            dimension will be split into.
+        :param no_agent: The cell colors replace the entire observation image,
+            instead of only replacing the background.
+        :param task_kwargs: Dict of keyword arguments for the DMC task.
+        :param visualize_reward: Argument for the DMC task; if true
+            object colors in rendered frames are set to indicate the reward
+            at each step.
+        :param from_pixels: Whether to create observation space from pixels or
+            from underlying observation space of wrapped environment.
+        :param height: Image height.
+        :param width: Image width.
+        :param camera_id: Environment camera id.
+        :param frame_skip: How many times to apply action and accumulate
+            reward before returning.
+        :param environment_kwargs: Dict of keyword arguments for the DMC
+            environment.
+        :param episode_length: Maximum episode length.
+        """
         assert 'random' in task_kwargs, 'please specify a seed, for deterministic behaviour'
         assert action_splits is None or action_power is None
         assert action_splits is None or evil_level is EvilEnum.EVIL_ACTION
