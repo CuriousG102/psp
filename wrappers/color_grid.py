@@ -468,7 +468,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         # set seed
         self.seed(seed=task_kwargs.get('random', 1))
         self.num_steps_taken = 0
-        
+
         self.observation_space = self._observation_space
         self.action_space = self._norm_action_space
 
