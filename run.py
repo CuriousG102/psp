@@ -15,7 +15,7 @@ from tia.Dreamer.dreamers import Dreamer, SeparationDreamer, InverseDreamer
 from tia.Dreamer import env_tools
 from tia.Dreamer import tools
 from tia.Dreamer import wrappers as tia_wrappers
-from wrappers import color_grid
+from wrappers import color_grid_utils
 
 METHOD2DREAMER = {
     'dreamer': Dreamer,
@@ -24,14 +24,14 @@ METHOD2DREAMER = {
 }
 
 EVIL_CHOICES = {
-    'max': color_grid.EvilEnum.MAXIMUM_EVIL,
-    'reward': color_grid.EvilEnum.EVIL_REWARD,
-    'action': color_grid.EvilEnum.EVIL_ACTION,
-    'sequence': color_grid.EvilEnum.EVIL_SEQUENCE,
-    'action_cross_sequence': color_grid.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
-    'minimum': color_grid.EvilEnum.MINIMUM_EVIL,
-    'random': color_grid.EvilEnum.RANDOM,
-    'none': color_grid.EvilEnum.NONE
+    'max': color_grid_utils.EvilEnum.MAXIMUM_EVIL,
+    'reward': color_grid_utils.EvilEnum.EVIL_REWARD,
+    'action': color_grid_utils.EvilEnum.EVIL_ACTION,
+    'sequence': color_grid_utils.EvilEnum.EVIL_SEQUENCE,
+    'action_cross_sequence': color_grid_utils.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
+    'minimum': color_grid_utils.EvilEnum.MINIMUM_EVIL,
+    'random': color_grid_utils.EvilEnum.RANDOM,
+    'none': color_grid_utils.EvilEnum.NONE
 }
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'

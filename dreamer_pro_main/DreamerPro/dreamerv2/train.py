@@ -28,7 +28,7 @@ import agent
 import elements
 from dreamer_pro_main.DreamerPro import common
 
-from wrappers import color_grid
+from wrappers import color_grid_utils
 
 
 configs = pathlib.Path(
@@ -77,14 +77,14 @@ should_video_eval = elements.Every(config.eval_every)
 
 
 EVIL_CHOICES = {
-    'max': color_grid.EvilEnum.MAXIMUM_EVIL,
-    'reward': color_grid.EvilEnum.EVIL_REWARD,
-    'action': color_grid.EvilEnum.EVIL_ACTION,
-    'sequence': color_grid.EvilEnum.EVIL_SEQUENCE,
-    'action_cross_sequence': color_grid.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
-    'minimum': color_grid.EvilEnum.MINIMUM_EVIL,
-    'random': color_grid.EvilEnum.RANDOM,
-    'none': color_grid.EvilEnum.NONE
+    'max': color_grid_utils.EvilEnum.MAXIMUM_EVIL,
+    'reward': color_grid_utils.EvilEnum.EVIL_REWARD,
+    'action': color_grid_utils.EvilEnum.EVIL_ACTION,
+    'sequence': color_grid_utils.EvilEnum.EVIL_SEQUENCE,
+    'action_cross_sequence': color_grid_utils.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
+    'minimum': color_grid_utils.EvilEnum.MINIMUM_EVIL,
+    'random': color_grid_utils.EvilEnum.RANDOM,
+    'none': color_grid_utils.EvilEnum.NONE
 }
 
 

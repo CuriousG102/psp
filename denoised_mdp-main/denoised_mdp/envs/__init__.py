@@ -18,17 +18,17 @@ from .abc import AutoResetEnvBase
 from .utils import split_seed
 from .interaction import env_interact_random_actor, env_interact_with_model, EnvInteractData
 
-from wrappers import color_grid
+from wrappers import color_grid_utils
 
 
 EVIL_CHOICES = {
-    'max': color_grid.EvilEnum.MAXIMUM_EVIL,
-    'reward': color_grid.EvilEnum.EVIL_REWARD,
-    'action': color_grid.EvilEnum.EVIL_ACTION,
-    'sequence': color_grid.EvilEnum.EVIL_SEQUENCE,
-    'minimum': color_grid.EvilEnum.MINIMUM_EVIL,
-    'random': color_grid.EvilEnum.RANDOM,
-    'none': color_grid.EvilEnum.NONE
+    'max': color_grid_utils.EvilEnum.MAXIMUM_EVIL,
+    'reward': color_grid_utils.EvilEnum.EVIL_REWARD,
+    'action': color_grid_utils.EvilEnum.EVIL_ACTION,
+    'sequence': color_grid_utils.EvilEnum.EVIL_SEQUENCE,
+    'minimum': color_grid_utils.EvilEnum.MINIMUM_EVIL,
+    'random': color_grid_utils.EvilEnum.RANDOM,
+    'none': color_grid_utils.EvilEnum.NONE
 }
 
 
