@@ -1,6 +1,7 @@
 defaults:
   - _self_
   - task@_global_: quadruped_walk
+  - background@_global_: action_reward_large.yaml
   - override hydra/launcher: submitit_local
 
 # task settings
@@ -60,3 +61,11 @@ hydra:
     mem_gb: 160
     nodes: 1
     submitit_folder: ./exp/${now:%Y.%m.%d}/${now:%H%M%S}_${agent_cfg.experiment}/.slurm
+
+background:
+  num_cells_per_dim: 16
+  num_colors_per_cell: 11,664
+  evil_level: max
+  action_dims_to_split: [0, 1, 2, 3, 4, 5]
+  action_power: 3
+  action_splits: null
