@@ -7,7 +7,8 @@ from typing import Any, NamedTuple
 
 import dm_env
 import numpy as np
-from dm_control import manipulation, suite
+from dm_control import manipulation
+from tia.Dreamer import local_dm_control_suite as suite
 from dm_control.suite.wrappers import action_scale, pixels
 from dm_env import StepType, specs
 
@@ -266,6 +267,7 @@ class BackgroundWrapper(dm_env.Environment):
         self._env = env
         self._pixels_key = pixels_key
         self._no_agent = no_agent
+        self._evil_level = evil_level
         self._num_steps_taken = 0
         self.color_bg = color_grid_utils.ColorGridBackground(
             domain_name=domain_name,
@@ -291,6 +293,9 @@ class BackgroundWrapper(dm_env.Environment):
         return self._add_background_image(time_step, action)
 
     def _add_background_image(self, time_step, action):
+        if self._evil_level is color_grid_utils.EvilEnum.NONE:
+            return time_step
+
         bg_image = self.color_bg.get_background_image(
             self._num_steps_taken, action, time_step.reward)
         self._num_steps_taken += 1
@@ -298,7 +303,6 @@ class BackgroundWrapper(dm_env.Environment):
         if self._no_agent:
             image = bg_image
         else:
-
             image = time_step.observation[self._pixels_key].copy()
             # remove batch dim
             if len(image.shape) == 4:
