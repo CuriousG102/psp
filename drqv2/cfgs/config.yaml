@@ -9,6 +9,7 @@ frame_stack: 3
 action_repeat: 2
 discount: 0.99
 # train settings
+num_train_frames: 1000000
 num_seed_frames: 4000
 # eval
 eval_every_frames: 10000
@@ -64,7 +65,7 @@ hydra:
 
 background:
   num_cells_per_dim: 16
-  num_colors_per_cell: 11,664
+  num_colors_per_cell: 11664
   evil_level: max
   action_dims_to_split: [0, 1, 2, 3, 4, 5]
   action_power: 3
