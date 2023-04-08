@@ -127,6 +127,12 @@ class Workspace:
                     action = self.agent.act(time_step.observation,
                                             self.global_step,
                                             eval_mode=True)
+
+
+
+
+
+
                 time_step = self.eval_env.step(action)
                 self.video_recorder.record(self.eval_env, obs=time_step.observation)
                 total_reward += time_step.reward

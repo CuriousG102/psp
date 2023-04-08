@@ -96,20 +96,26 @@ def get_colors_for_action_and_reward_max_evil(
 
 
 def get_colors_for_action_and_sequence_evil(
-        num_colors_per_cell, action_dims_to_split, action_power):
+        num_colors_per_cell, action_dims_to_split,
+        action_power, action_splits):
+    assert action_power is None or action_splits is None
     # TODO: Allow crossing anything, refactor all the logic in this file.
-    colors_for_action = action_power ** len(action_dims_to_split)
+    if action_power:
+        colors_for_action = action_power ** len(action_dims_to_split)
+    else:
+        colors_for_action = 1
+        for s in action_splits:
+            colors_for_action *= s
     colors_for_sequence = num_colors_per_cell // colors_for_action
     total = colors_for_action * colors_for_sequence
     # TODO: Test this logic
     assert num_colors_per_cell == total, get_num_colors_log_message(
         num_colors_per_cell,
         num_colors_per_cell - colors_for_action * colors_for_sequence)
-    return(
-        split_action_space(
+    if action_splits is None:
+        action_splits = split_action_space(
             action_dims_to_split, colors_for_action, power=action_power),
-        colors_for_sequence
-    )
+    return (action_splits, colors_for_sequence)
 
 
 def get_colors_for_evil_action(
@@ -333,7 +339,10 @@ class ColorGridBackground:
         :param random_seed: Random seed to use for choosing background.
         """
         assert action_splits is None or action_power is None
-        assert action_splits is None or evil_level is EvilEnum.EVIL_ACTION
+        assert (
+               action_splits is None
+               or evil_level is EvilEnum.EVIL_ACTION
+               or evil_level is EvilEnum.EVIL_ACTION_CROSS_SEQUENCE)
         assert (
                 action_splits is None
                 or len(action_splits) == len(action_dims_to_split))
@@ -392,7 +401,8 @@ class ColorGridBackground:
         elif evil_level is EvilEnum.EVIL_ACTION_CROSS_SEQUENCE:
             self.colors_per_action_dim, self.num_colors_for_sequence = (
                 get_colors_for_action_and_sequence_evil(
-                    num_colors_per_cell, action_dims_to_split, action_power))
+                    num_colors_per_cell, action_dims_to_split, action_power,
+                    action_splits))
 
         np.random.seed(random_seed)
         self._color_grid = np.random.randint(255, size=[

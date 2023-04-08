@@ -402,7 +402,11 @@ class TransitionModel(jit.ScriptModule):
         if z_belief_size > 0:
             self.z_state_action_x_pre_rnn = BottledModule(nn.Sequential(
                 nn.Linear(
-                    x_belief_size + x_state_size + z_state_size + action_size,
+                    # Can experiment with which of these should be fed in.
+                    # x_belief_size
+                    # + x_state_size
+                    + z_state_size
+                    + action_size,
                     z_belief_size,
                 ),
                 get_activation_module(activation_function),
@@ -424,7 +428,11 @@ class TransitionModel(jit.ScriptModule):
 
         self.xy_belief_obs_to_state_posterior = BottledModule(nn.Sequential(
             nn.Linear(
-                x_belief_size + y_belief_size + z_belief_size + z_state_size + embedding_size,
+                x_belief_size
+                + y_belief_size
+                + z_belief_size
+                + z_state_size
+                + embedding_size,
                 x_belief_size + y_belief_size,
             ),
             get_activation_module(activation_function),
@@ -437,7 +445,12 @@ class TransitionModel(jit.ScriptModule):
         if z_belief_size > 0:
             self.z_belief_obs_to_state_posterior = BottledModule(nn.Sequential(
                 nn.Linear(
-                    x_belief_size + y_belief_size + z_belief_size + embedding_size + x_state_size + y_state_size,
+                    x_belief_size
+                    + y_belief_size
+                    + z_belief_size
+                    + embedding_size
+                    + x_state_size
+                    + y_state_size,
                     z_belief_size,
                 ),
                 get_activation_module(activation_function),
@@ -652,10 +665,12 @@ class TransitionModel(jit.ScriptModule):
                 y_posterior_stddevs[t] = y_posterior_stddev
                 y_posterior_states[t] = y_posterior_state
 
+                # Won't be necessary if you stop feeding.
                 x_state_for_z_belief = x_posterior_state
             else:
                 x_posterior_state = x_posterior_states[t]
                 y_posterior_state = y_posterior_states[t]
+                # Won't be necessary if you stop feeding.
                 x_state_for_z_belief = x_prior_state
 
             if self.z_belief_size > 0:
@@ -664,8 +679,9 @@ class TransitionModel(jit.ScriptModule):
                     self.z_state_action_x_pre_rnn(
                         torch.cat(
                             [
-                                x_belief,
-                                x_state_for_z_belief,
+                                # Can experiment with not feeding these.
+                                # x_belief,
+                                # x_state_for_z_belief,
                                 prev_z_state,
                                 action,
                             ],
@@ -688,7 +704,13 @@ class TransitionModel(jit.ScriptModule):
                 if next_observations is not None:
                     # Compute state posterior by applying transition dynamics and using current observation
                     z_posterior_input = torch.cat(
-                        [x_belief, x_posterior_state, y_belief, y_posterior_state, z_belief, next_observations[t]],
+                        [
+                            x_belief,
+                            x_posterior_state,
+                            y_belief,
+                            y_posterior_state,
+                            z_belief,
+                            next_observations[t]],
                         dim=-1,
                     )
                     z_posterior_mean, _z_posterior_stddev = torch.chunk(
@@ -883,8 +905,8 @@ class TransitionModel(jit.ScriptModule):
                 self.z_state_action_x_pre_rnn(
                     torch.cat(
                         [
-                            x_belief,
-                            x_state_for_z_belief,
+                            # x_belief,
+                            # x_state_for_z_belief,
                             prev_z_state,
                             action,
                         ],

@@ -1,5 +1,7 @@
 dmc: 
 
+  use_unet: false
+  unet_lambda: 1
   logdir: ./
   video_dir: ./
   debug: False

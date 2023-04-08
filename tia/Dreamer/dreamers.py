@@ -1,3 +1,4 @@
+from keras_unet.models import custom_unet
 from tia.Dreamer import tools
 from tia.Dreamer import models
 from tensorflow_probability import distributions as tfd
@@ -49,7 +50,7 @@ class Dreamer(tools.Module):
         with self._strategy.scope():
             self._dataset = iter(self._strategy.experimental_distribute_dataset(
                 load_dataset(datadir, self._c)))
-        self._build_model()
+            self._build_model()
 
     def __call__(self, obs, reset, state=None, training=True):
         step = self._step.numpy().item()
@@ -79,7 +80,16 @@ class Dreamer(tools.Module):
             action = tf.zeros((len(obs['image']), self._actdim), self._float)
         else:
             latent, action = state
-        embed = self._encode(preprocess(obs, self._c))
+        # TODO: Modify here too.
+        obs = preprocess(obs, self._c)
+        if self._c.use_unet:
+            obs['true_image'] = obs['image']
+            true_image = tf.reshape(
+                obs['image'], (-1,) + tuple(obs['image'].shape[-3:]))
+            mask = self._unet(true_image)
+            image_shape = obs['image'].shape
+            obs['image'] = tf.reshape(mask * true_image, image_shape)
+        embed = self._encode(obs)
         latent, _ = self._dynamics.obs_step(latent, action, embed)
         feat = self._dynamics.get_feat(latent)
         if training:
@@ -99,7 +109,20 @@ class Dreamer(tools.Module):
         self._strategy.run(self._train, args=(data, log_images))
 
     def _train(self, data, log_images):
+        if self._c.use_unet:
+            data = data.copy()
         with tf.GradientTape() as model_tape:
+            # In new model, predict soft-mask here, with warmup schedule.
+            if self._c.use_unet:
+                data['true_image'] = data['image']
+                true_image = tf.reshape(
+                    data['image'], (-1,) + tuple(data['image'].shape[-3:]))
+                mask = self._unet(true_image)
+                image_shape = data['image'].shape
+                data['image'] = tf.reshape(mask * true_image, image_shape)
+                mask = tf.reshape(mask, image_shape[:-1] + [1])
+            else:
+                mask = None
             embed = self._encode(data)
             post, prior = self._dynamics.observe(embed, data['action'])
             feat = self._dynamics.get_feat(post)
@@ -108,6 +131,7 @@ class Dreamer(tools.Module):
             reward_pred = self._reward(feat)
 
             likes = tools.AttrDict()
+            # Todo: Maybe weight image log prob loss according to mask weights?
             likes.image = tf.reduce_mean(image_pred.log_prob(data['image']))
             likes.reward = tf.reduce_mean(reward_pred.log_prob(data['reward']))
             if self._c.pcont:
@@ -121,7 +145,13 @@ class Dreamer(tools.Module):
             div = tf.reduce_mean(tfd.kl_divergence(post_dist, prior_dist))
             div = tf.maximum(div, self._c.free_nats)
 
+            # In new model, add an L1 loss for the mask, with lambda hparam.
             model_loss = self._c.kl_scale * div - sum(likes.values())
+            if self._c.use_unet:
+                mask_l1 = tf.math.reduce_mean(tf.math.abs(mask) + 1e-3)
+                model_loss += self._c.unet_lambda * mask_l1
+            else:
+                mask_l1 = None
             model_loss /= float(self._strategy.num_replicas_in_sync)
 
         with tf.GradientTape() as actor_tape:
@@ -156,9 +186,9 @@ class Dreamer(tools.Module):
                 self._scalar_summaries(
                     data, feat, prior_dist, post_dist, likes, div,
                     model_loss, value_loss, actor_loss, model_norm, value_norm,
-                    actor_norm)
+                    actor_norm, mask_l1)
             if tf.equal(log_images, True):
-                self._image_summaries(data, embed, image_pred)
+                self._image_summaries(data, embed, image_pred, mask)
 
     def _build_model(self):
         acts = dict(
@@ -166,6 +196,10 @@ class Dreamer(tools.Module):
             leaky_relu=tf.nn.leaky_relu)
         cnn_act = acts[self._c.cnn_act]
         act = acts[self._c.dense_act]
+        if self._c.use_unet:
+            self._unet = custom_unet(
+                input_shape=(self._c.image_size, self._c.image_size, 3),
+                filters=8, num_layers=3)
         self._encode = models.ConvEncoder(
             self._c.cnn_depth, cnn_act, self._c.image_size)
         self._dynamics = models.RSSM(
@@ -184,6 +218,8 @@ class Dreamer(tools.Module):
                          self._decode, self._reward]
         if self._c.pcont:
             model_modules.append(self._pcont)
+        if self._c.use_unet:
+            model_modules.append(self._unet)
         Optimizer = functools.partial(
             tools.Adam, wd=self._c.weight_decay, clip=self._c.grad_clip,
             wdpattern=self._c.weight_decay_pattern)
@@ -236,7 +272,7 @@ class Dreamer(tools.Module):
     def _scalar_summaries(
             self, data, feat, prior_dist, post_dist, likes, div,
             model_loss, value_loss, actor_loss, model_norm, value_norm,
-            actor_norm):
+            actor_norm, mask_l1=None):
         self._metrics['model_grad_norm'].update_state(model_norm)
         self._metrics['value_grad_norm'].update_state(value_norm)
         self._metrics['actor_grad_norm'].update_state(actor_norm)
@@ -249,17 +285,29 @@ class Dreamer(tools.Module):
         self._metrics['value_loss'].update_state(value_loss)
         self._metrics['actor_loss'].update_state(actor_loss)
         self._metrics['action_ent'].update_state(self._actor(feat).entropy())
+        if mask_l1 is not None:
+            self._metrics['mask_l1'].update_state(mask_l1)
 
-    def _image_summaries(self, data, embed, image_pred):
-        truth = data['image'][:6] + 0.5
+    def _image_summaries(self, data, embed, image_pred, mask=None):
+        if mask is not None:
+            truth = data['true_image' if self._c.use_unet else 'image'][:6] + 0.5
         recon = image_pred.mode()[:6]
         init, _ = self._dynamics.observe(embed[:6, :5], data['action'][:6, :5])
         init = {k: v[:, -1] for k, v in init.items()}
         prior = self._dynamics.imagine(data['action'][:6, 5:], init)
         openl = self._decode(self._dynamics.get_feat(prior)).mode()
         model = tf.concat([recon[:, :5] + 0.5, openl + 0.5], 1)
-        error = (model - truth + 1) / 2
-        openl = tf.concat([truth, model, error], 2)
+
+        if mask is not None:
+            truth = data['true_image'][:6] + 0.5
+            masked_truth = data['image'][:6] + 0.5
+            mask = mask[:6]
+            error = (model - masked_truth + 1) / 2
+            openl = tf.concat([truth, tf.repeat(mask, 3, -1), masked_truth, model, error], 2)
+        else:
+            truth = data['image'][:6] + 0.5
+            error = (model - truth + 1) / 2
+            openl = tf.concat([truth, model, error], 2)
         tools.graph_summary(
             self._writer, tools.video_summary, self._step, 'agent/openl', openl)
 
