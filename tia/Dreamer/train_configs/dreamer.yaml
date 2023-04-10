@@ -2,6 +2,14 @@ dmc:
 
   use_unet: false
   unet_lambda: 1
+  use_color_mask: false
+  color_mask_hardcode: false
+  color_mask_hardcode_r: 0
+  color_mask_hardcode_g: 0
+  color_mask_hardcode_b: 0
+  color_mask_threshold: 190
+  color_mask_temp: 10
+  image_loss_scale: 1
   logdir: ./
   video_dir: ./
   debug: False

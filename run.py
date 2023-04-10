@@ -117,6 +117,8 @@ def main(config):
         prec.set_global_policy(prec.Policy('mixed_float16'))
     config.steps = int(config.steps)
     config.logdir = logdir
+    if config.debug:
+        tf.config.experimental_run_functions_eagerly(True)
     print('Logdir', config.logdir)
 
     # Create environments.

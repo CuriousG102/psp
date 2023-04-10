@@ -73,6 +73,12 @@ class Dreamer(tools.Module):
             self._step.assign_add(len(reset) * self._c.action_repeat)
         return action, state
 
+    def get_color_mask(self, image):
+        dists = tf.math.reduce_euclidean_norm(
+            image - self.mask_color, axis=-1)
+        return tf.math.sigmoid(
+            (-dists + self.mask_threshold) / self.mask_temp)
+
     @tf.function
     def policy(self, obs, state, training):
         if state is None:
@@ -89,6 +95,13 @@ class Dreamer(tools.Module):
             mask = self._unet(true_image)
             image_shape = obs['image'].shape
             obs['image'] = tf.reshape(mask * true_image, image_shape)
+        elif self._c.use_color_mask:
+            obs['true_image'] = obs['image']
+            true_image = tf.reshape(
+                obs['image'], (-1,) + tuple(obs['image'].shape[-3:]))
+            mask = self.get_color_mask(true_image)
+            image_shape = obs['image'].shape
+            obs['image'] = tf.reshape(mask[..., tf.newaxis] * true_image, image_shape)
         embed = self._encode(obs)
         latent, _ = self._dynamics.obs_step(latent, action, embed)
         feat = self._dynamics.get_feat(latent)
@@ -109,7 +122,7 @@ class Dreamer(tools.Module):
         self._strategy.run(self._train, args=(data, log_images))
 
     def _train(self, data, log_images):
-        if self._c.use_unet:
+        if self._c.use_unet or self._c.use_color_mask:
             data = data.copy()
         with tf.GradientTape() as model_tape:
             # In new model, predict soft-mask here, with warmup schedule.
@@ -120,6 +133,14 @@ class Dreamer(tools.Module):
                 mask = self._unet(true_image)
                 image_shape = data['image'].shape
                 data['image'] = tf.reshape(mask * true_image, image_shape)
+                mask = tf.reshape(mask, image_shape[:-1] + [1])
+            elif self._c.use_color_mask:
+                data['true_image'] = data['image']
+                true_image = tf.reshape(
+                    data['image'], (-1,) + tuple(data['image'].shape[-3:]))
+                mask = self.get_color_mask(true_image)
+                image_shape = data['image'].shape
+                data['image'] = tf.reshape(mask[..., tf.newaxis] * true_image, image_shape)
                 mask = tf.reshape(mask, image_shape[:-1] + [1])
             else:
                 mask = None
@@ -132,7 +153,9 @@ class Dreamer(tools.Module):
 
             likes = tools.AttrDict()
             # Todo: Maybe weight image log prob loss according to mask weights?
-            likes.image = tf.reduce_mean(image_pred.log_prob(data['image']))
+            likes.image = (
+                tf.reduce_mean(image_pred.log_prob(data['image']))
+                * self._c.image_loss_scale)
             likes.reward = tf.reduce_mean(reward_pred.log_prob(data['reward']))
             if self._c.pcont:
                 pcont_pred = self._pcont(feat)
@@ -147,9 +170,10 @@ class Dreamer(tools.Module):
 
             # In new model, add an L1 loss for the mask, with lambda hparam.
             model_loss = self._c.kl_scale * div - sum(likes.values())
-            if self._c.use_unet:
+            if self._c.use_unet or self._c.use_color_mask:
                 mask_l1 = tf.math.reduce_mean(tf.math.abs(mask) + 1e-3)
-                model_loss += self._c.unet_lambda * mask_l1
+                if self._c.use_color_mask:
+                    model_loss += self._c.unet_lambda * mask_l1
             else:
                 mask_l1 = None
             model_loss /= float(self._strategy.num_replicas_in_sync)
@@ -200,6 +224,23 @@ class Dreamer(tools.Module):
             self._unet = custom_unet(
                 input_shape=(self._c.image_size, self._c.image_size, 3),
                 filters=8, num_layers=3)
+        if self._c.use_color_mask:
+            if self._c.color_mask_hardcode:
+                self.mask_color = tf.Variable(
+                    tf.constant(
+                        [self._c.color_mask_hardcode_r / 255. - 0.5,
+                         self._c.color_mask_hardcode_g / 255. - 0.5,
+                         self._c.color_mask_hardcode_b / 255. - 0.5],
+                        dtype=self._float),
+                    trainable=False)
+            else:
+                self.mask_color = tf.Variable(
+                    tf.zeros([3], dtype=self._float), trainable=True)
+            self.mask_threshold = tf.Variable(
+                self._c.color_mask_threshold / 255 - 0.5, trainable=False,
+                dtype=self._float)
+            self.mask_temp = tf.Variable(
+                self._c.color_mask_temp, trainable=False, dtype=self._float)
         self._encode = models.ConvEncoder(
             self._c.cnn_depth, cnn_act, self._c.image_size)
         self._dynamics = models.RSSM(
@@ -289,8 +330,6 @@ class Dreamer(tools.Module):
             self._metrics['mask_l1'].update_state(mask_l1)
 
     def _image_summaries(self, data, embed, image_pred, mask=None):
-        if mask is not None:
-            truth = data['true_image' if self._c.use_unet else 'image'][:6] + 0.5
         recon = image_pred.mode()[:6]
         init, _ = self._dynamics.observe(embed[:6, :5], data['action'][:6, :5])
         init = {k: v[:, -1] for k, v in init.items()}
