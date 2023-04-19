@@ -124,7 +124,7 @@ class Dreamer(tools.Module):
     def _train(self, data, log_images):
         if self._c.use_unet or self._c.use_color_mask:
             data = data.copy()
-        with tf.GradientTape() as model_tape:
+        with tf.GradientTape(persistent=True) as model_tape:
             # In new model, predict soft-mask here, with warmup schedule.
             if self._c.use_unet:
                 data['true_image'] = data['image']
@@ -172,8 +172,19 @@ class Dreamer(tools.Module):
             model_loss = self._c.kl_scale * div - sum(likes.values())
             if self._c.use_unet or self._c.use_color_mask:
                 mask_l1 = tf.math.reduce_mean(tf.math.abs(mask) + 1e-3)
-                if self._c.use_color_mask:
-                    model_loss += self._c.unet_lambda * mask_l1
+                mask_loss = -likes.reward
+                mask_loss += (
+                    tf.math.sigmoid(
+                        self.mask_l1_sigmoid_steepness * (
+                            mask_l1 - self.mask_l1_max
+                        )
+                    ) - tf.math.sigmoid(
+                        self.mask_l1_sigmoid_steepness * (
+                            mask_l1 - self.mask_l1_min
+                        )
+                    )
+                )
+                mask_loss /= float(self._strategy.num_replicas_in_sync)
             else:
                 mask_l1 = None
             model_loss /= float(self._strategy.num_replicas_in_sync)
@@ -202,6 +213,8 @@ class Dreamer(tools.Module):
             value_loss /= float(self._strategy.num_replicas_in_sync)
 
         model_norm = self._model_opt(model_tape, model_loss)
+        if self._mask_opt:
+            self._mask_opt(model_tape, mask_loss)
         actor_norm = self._actor_opt(actor_tape, actor_loss)
         value_norm = self._value_opt(value_tape, value_loss)
 
@@ -235,12 +248,23 @@ class Dreamer(tools.Module):
                     trainable=False)
             else:
                 self.mask_color = tf.Variable(
-                    tf.zeros([3], dtype=self._float), trainable=True)
+                    [self._c.color_mask_hardcode_r / 255. - 0.5,
+                     self._c.color_mask_hardcode_g / 255. - 0.5,
+                     self._c.color_mask_hardcode_b / 255. - 0.5],
+                    trainable=True, dtype=self._float)
             self.mask_threshold = tf.Variable(
                 self._c.color_mask_threshold / 255 - 0.5, trainable=False,
                 dtype=self._float)
             self.mask_temp = tf.Variable(
                 self._c.color_mask_temp, trainable=False, dtype=self._float)
+        if self._c.use_unet or self._c.use_color_mask:
+            self.mask_l1_min = tf.Variable(
+                self._c.mask_l1_min, trainable=False, dtype=self._float)
+            self.mask_l1_max = tf.Variable(
+                self._c.mask_l1_max, trainable=False, dtype=self._float)
+            self.mask_l1_sigmoid_steepness = tf.Variable(
+                self._c.mask_l1_sigmoid_steepness, trainable=False, dtype=self._float
+            )
         self._encode = models.ConvEncoder(
             self._c.cnn_depth, cnn_act, self._c.image_size)
         self._dynamics = models.RSSM(
@@ -259,14 +283,18 @@ class Dreamer(tools.Module):
                          self._decode, self._reward]
         if self._c.pcont:
             model_modules.append(self._pcont)
-        if self._c.use_unet:
-            model_modules.append(self._unet)
         Optimizer = functools.partial(
             tools.Adam, wd=self._c.weight_decay, clip=self._c.grad_clip,
             wdpattern=self._c.weight_decay_pattern)
         self._model_opt = Optimizer('model', model_modules, self._c.model_lr)
         self._value_opt = Optimizer('value', [self._value], self._c.value_lr)
         self._actor_opt = Optimizer('actor', [self._actor], self._c.actor_lr)
+        self._mask_opt = None
+        if self._c.use_unet:
+            self._mask_opt = Optimizer('unet', [self._unet], self._c.unet_lr)
+        elif self._c.use_color_mask and not self._c.color_mask_hardcode:
+            self._mask_opt = Optimizer('color_mask', [self.mask_color], self._c.color_mask_lr)
+
         self.train(next(self._dataset))
 
     def _exploration(self, action, training):

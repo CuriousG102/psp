@@ -364,7 +364,12 @@ class Adam(tf.Module):
 
     def __call__(self, tape, loss):
         if self._variables is None:
-            variables = [module.variables for module in self._modules]
+            variables = [
+                (module
+                 if isinstance(module, tf.Variable)
+                 else module.variables)
+                for module in self._modules
+            ]
             self._variables = tf.nest.flatten(variables)
             count = sum(np.prod(x.shape) for x in self._variables)
             print(f'Found {count} {self._name} parameters.')

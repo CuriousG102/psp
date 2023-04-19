@@ -8,6 +8,9 @@ dmc:
   color_mask_hardcode_g: 0
   color_mask_hardcode_b: 0
   color_mask_threshold: 190
+  mask_l1_min: .00
+  mask_l1_max: .3
+  mask_l1_sigmoid_steepness: 200
   color_mask_temp: 10
   image_loss_scale: 1
   logdir: ./
@@ -48,6 +51,8 @@ dmc:
   train_every: 1000
   train_steps: 100
   pretrain: 100
+  unet_lr: 0.0006
+  color_mask_lr: 0.0006
   model_lr: 0.0006
   value_lr: 8.0e-05
   actor_lr: 8.0e-05
