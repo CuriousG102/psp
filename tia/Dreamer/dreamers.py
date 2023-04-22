@@ -92,9 +92,9 @@ class Dreamer(tools.Module):
             obs['true_image'] = obs['image']
             true_image = tf.reshape(
                 obs['image'], (-1,) + tuple(obs['image'].shape[-3:]))
-            mask = self._unet(true_image)
+            mask = self._unet(tf.cast(true_image, tf.float32))
             image_shape = obs['image'].shape
-            obs['image'] = tf.reshape(mask * true_image, image_shape)
+            obs['image'] = tf.reshape(tf.cast(mask, tf.float16) * true_image, image_shape)
         elif self._c.use_color_mask:
             obs['true_image'] = obs['image']
             true_image = tf.reshape(
@@ -125,91 +125,107 @@ class Dreamer(tools.Module):
         if self._c.use_unet or self._c.use_color_mask:
             data = data.copy()
         with tf.GradientTape() as mask_tape:
-            with tf.GradientTape(persistent=True) as model_tape:
-                # In new model, predict soft-mask here, with warmup schedule.
+            # In new model, predict soft-mask here, with warmup schedule.
+            if self._mask_opt:
+                data['true_image'] = data['image']
+                true_image = tf.reshape(
+                    data['image'], (-1,) + tuple(data['image'].shape[-3:]))
+                true_mask = ~(
+                        (true_image[..., 2] > true_image[..., 1])
+                        & (true_image[..., 2] > true_image[..., 0]))
                 if self._c.use_unet:
-                    data['true_image'] = data['image']
-                    true_image = tf.reshape(
-                        data['image'], (-1,) + tuple(data['image'].shape[-3:]))
-                    mask = self._unet(true_image)
-                    image_shape = data['image'].shape
-                    data['image'] = tf.reshape(mask * true_image, image_shape)
-                    mask = tf.reshape(mask, image_shape[:-1] + [1])
+                    mask = self._unet(tf.cast(true_image, tf.float32))
                 elif self._c.use_color_mask:
-                    data['true_image'] = data['image']
-                    true_image = tf.reshape(
-                        data['image'], (-1,) + tuple(data['image'].shape[-3:]))
                     mask = self.get_color_mask(true_image)
-                    image_shape = data['image'].shape
-                    data['image'] = tf.reshape(mask[..., tf.newaxis] * true_image, image_shape)
-                    mask = tf.reshape(mask, image_shape[:-1] + [1])
                 else:
-                    mask = None
-                embed = self._encode(data)
-                post, prior = self._dynamics.observe(embed, data['action'])
-                with mask_tape.stop_recording():
-                    feat = self._dynamics.get_feat(post)
+                    raise ValueError('Unsupported mask type')
+                image_shape = data['image'].shape
+                data['image'] = tf.reshape(tf.cast(mask, tf.float16) * true_image, image_shape)
+                mask = tf.reshape(mask, image_shape[:-1] + [1])
+                true_mask = tf.reshape(true_mask, image_shape[:-1] + [1])
 
-                    image_pred = self._decode(feat)
-                    reward_pred = self._reward(feat)
-
-                    likes = tools.AttrDict()
-                    # Todo: Maybe weight image log prob loss according to mask weights?
-                    likes.image = (
-                        tf.reduce_mean(image_pred.log_prob(data['image']))
-                        * self._c.image_loss_scale)
-                    likes.reward = tf.reduce_mean(reward_pred.log_prob(data['reward']))
-                    if self._c.pcont:
-                        pcont_pred = self._pcont(feat)
-                        pcont_target = self._c.discount * data['discount']
-                        likes.pcont = tf.reduce_mean(pcont_pred.log_prob(pcont_target))
-                        likes.pcont *= self._c.pcont_scale
-
-                    prior_dist = self._dynamics.get_dist(prior)
-                    post_dist = self._dynamics.get_dist(post)
-                    div = tf.reduce_mean(tfd.kl_divergence(post_dist, prior_dist))
-                    div = tf.maximum(div, self._c.free_nats)
-
-                    model_loss = self._c.kl_scale * div - sum(likes.values())
-
-            with tf.GradientTape() as actor_tape:
-                imag_feat = self._imagine_ahead(post)
-                with mask_tape.stop_recording():
-                    reward = self._reward(imag_feat).mode()
-                    if self._c.pcont:
-                        pcont = self._pcont(imag_feat).mean()
-                    else:
-                        pcont = self._c.discount * tf.ones_like(reward)
-                    value = self._value(imag_feat).mode()
-                    returns = tools.lambda_return(
-                        reward[:-1], value[:-1], pcont[:-1],
-                        bootstrap=value[-1], lambda_=self._c.disclam, axis=0)
-                    discount = tf.stop_gradient(tf.math.cumprod(tf.concat(
-                        [tf.ones_like(pcont[:1]), pcont[:-2]], 0), 0))
-                    actor_loss = -tf.reduce_mean(discount * returns)
-                    actor_loss /= float(self._strategy.num_replicas_in_sync)
-
-            with tf.GradientTape() as value_tape:
-                value_pred = self._value(imag_feat)[:-1]
-                target = tf.stop_gradient(returns)
-                value_loss = - \
-                    tf.reduce_mean(discount * value_pred.log_prob(target))
-                value_loss /= float(self._strategy.num_replicas_in_sync)
-            value_norm = self._value_opt(value_tape, value_loss)
-            mask_loss = -value_norm**2
+            if self._mask_opt:
+                true_mask = tf.cast(true_mask, tf.float32)
+                mask_loss = -tf.reduce_mean(
+                    true_mask * tf.math.log(mask)
+                    + (1 - true_mask) * tf.math.log(1 - mask))
+            else:
+                mask_loss = None
 
         if self._mask_opt:
-            self._mask_opt(mask_tape, mask_loss)
+            mask_norm = self._mask_opt(mask_tape, mask_loss)
+        else:
+            mask_norm = None
+
+        with tf.GradientTape() as model_tape:
+            embed = self._encode(data)
+            post, prior = self._dynamics.observe(embed, data['action'])
+            # with mask_tape.stop_recording():
+            feat = self._dynamics.get_feat(post)
+
+            image_pred = self._decode(feat)
+            reward_pred = self._reward(feat)
+
+            likes = tools.AttrDict()
+            # Todo: Maybe weight image log prob loss according to mask weights?
+            likes.image = (
+                tf.reduce_mean(image_pred.log_prob(data['image']))
+                * self._c.image_loss_scale)
+            likes.reward = tf.reduce_mean(reward_pred.log_prob(data['reward']))
+            if self._c.pcont:
+                pcont_pred = self._pcont(feat)
+                pcont_target = self._c.discount * data['discount']
+                likes.pcont = tf.reduce_mean(pcont_pred.log_prob(pcont_target))
+                likes.pcont *= self._c.pcont_scale
+
+            prior_dist = self._dynamics.get_dist(prior)
+            post_dist = self._dynamics.get_dist(post)
+            div = tf.reduce_mean(tfd.kl_divergence(post_dist, prior_dist))
+            div = tf.maximum(div, self._c.free_nats)
+
+            model_loss = self._c.kl_scale * div - sum(likes.values())
+
+        with tf.GradientTape() as actor_tape:
+            imag_feat = self._imagine_ahead(post)
+            # with mask_tape.stop_recording():
+            reward = self._reward(imag_feat).mode()
+            if self._c.pcont:
+                pcont = self._pcont(imag_feat).mean()
+            else:
+                pcont = self._c.discount * tf.ones_like(reward)
+            value = self._value(imag_feat).mode()
+            returns = tools.lambda_return(
+                reward[:-1], value[:-1], pcont[:-1],
+                bootstrap=value[-1], lambda_=self._c.disclam, axis=0)
+            discount = tf.stop_gradient(tf.math.cumprod(tf.concat(
+                [tf.ones_like(pcont[:1]), pcont[:-2]], 0), 0))
+            actor_loss = -tf.reduce_mean(discount * returns)
+            actor_loss /= float(self._strategy.num_replicas_in_sync)
+
+        with tf.GradientTape() as value_tape:
+            value_pred = self._value(imag_feat)[:-1]
+            target = tf.stop_gradient(returns)
+            value_loss = - \
+                tf.reduce_mean(discount * value_pred.log_prob(target))
+            value_loss /= float(self._strategy.num_replicas_in_sync)
+        value_norm = self._value_opt(value_tape, value_loss)
+        # mask_loss = -value_norm**2
+
+
         model_norm = self._model_opt(model_tape, model_loss)
         actor_norm = self._actor_opt(actor_tape, actor_loss)
-        mask_l1 = tf.math.reduce_mean(tf.math.abs(mask) + 1e-3)
+        if mask is not None:
+            mask_l1 = tf.math.reduce_mean(tf.math.abs(mask) + 1e-3)
+        else:
+            mask_l1 = None
 
         if tf.distribute.get_replica_context().replica_id_in_sync_group == 0:
             if self._c.log_scalars:
                 self._scalar_summaries(
                     data, feat, prior_dist, post_dist, likes, div,
                     model_loss, value_loss, actor_loss, model_norm, value_norm,
-                    actor_norm, mask_l1)
+                    actor_norm,
+                    mask_l1=mask_l1, mask_loss=mask_loss, mask_norm=mask_norm)
             if tf.equal(log_images, True):
                 self._image_summaries(data, embed, image_pred, mask)
 
@@ -220,9 +236,11 @@ class Dreamer(tools.Module):
         cnn_act = acts[self._c.cnn_act]
         act = acts[self._c.dense_act]
         if self._c.use_unet:
+            tf.keras.mixed_precision.set_global_policy('float32')
             self._unet = custom_unet(
                 input_shape=(self._c.image_size, self._c.image_size, 3),
                 filters=8, num_layers=3)
+            tf.keras.mixed_precision.set_global_policy('mixed_float16')
         if self._c.use_color_mask:
             if self._c.color_mask_hardcode:
                 self.mask_color = tf.Variable(
@@ -277,7 +295,7 @@ class Dreamer(tools.Module):
         self._actor_opt = Optimizer('actor', [self._actor], self._c.actor_lr)
         self._mask_opt = None
         if self._c.use_unet:
-            self._mask_opt = Optimizer('unet', [self._unet], self._c.unet_lr)
+            self._mask_opt = Optimizer('unet', [self._unet], self._c.unet_lr, reduced_prec=False)
         elif self._c.use_color_mask and not self._c.color_mask_hardcode:
             self._mask_opt = Optimizer('color_mask', [self.mask_color], self._c.color_mask_lr)
 
@@ -327,7 +345,7 @@ class Dreamer(tools.Module):
     def _scalar_summaries(
             self, data, feat, prior_dist, post_dist, likes, div,
             model_loss, value_loss, actor_loss, model_norm, value_norm,
-            actor_norm, mask_l1=None):
+            actor_norm, mask_l1=None, mask_loss=None, mask_norm=None):
         self._metrics['model_grad_norm'].update_state(model_norm)
         self._metrics['value_grad_norm'].update_state(value_norm)
         self._metrics['actor_grad_norm'].update_state(actor_norm)
@@ -342,6 +360,8 @@ class Dreamer(tools.Module):
         self._metrics['action_ent'].update_state(self._actor(feat).entropy())
         if mask_l1 is not None:
             self._metrics['mask_l1'].update_state(mask_l1)
+            self._metrics['mask_loss'].update_state(mask_loss)
+            self._metrics['mask_norm'].update_state(mask_norm)
 
     def _image_summaries(self, data, embed, image_pred, mask=None):
         recon = image_pred.mode()[:6]
@@ -356,7 +376,7 @@ class Dreamer(tools.Module):
             masked_truth = data['image'][:6] + 0.5
             mask = mask[:6]
             error = (model - masked_truth + 1) / 2
-            openl = tf.concat([truth, tf.repeat(mask, 3, -1), masked_truth, model, error], 2)
+            openl = tf.concat([truth, tf.repeat(tf.cast(mask, tf.float16), 3, -1), masked_truth, model, error], 2)
         else:
             truth = data['image'][:6] + 0.5
             error = (model - truth + 1) / 2

@@ -348,7 +348,7 @@ def lambda_return(
 
 class Adam(tf.Module):
 
-    def __init__(self, name, modules, lr, clip=None, wd=None, wdpattern=r'.*'):
+    def __init__(self, name, modules, lr, clip=None, wd=None, wdpattern=r'.*', reduced_prec=True):
         self._name = name
         self._modules = modules
         self._clip = clip
@@ -357,6 +357,7 @@ class Adam(tf.Module):
         self._opt = tf.optimizers.Adam(lr)
         self._opt = prec.LossScaleOptimizer(self._opt, dynamic=True)
         self._variables = None
+        self._reduced_prec = reduced_prec
 
     @property
     def variables(self):
@@ -374,10 +375,12 @@ class Adam(tf.Module):
             count = sum(np.prod(x.shape) for x in self._variables)
             print(f'Found {count} {self._name} parameters.')
         assert len(loss.shape) == 0, loss.shape
-        with tape:
-            loss = self._opt.get_scaled_loss(loss)
+        if self._reduced_prec:
+            with tape:
+                loss = self._opt.get_scaled_loss(loss)
         grads = tape.gradient(loss, self._variables)
-        grads = self._opt.get_unscaled_gradients(grads)
+        if self._reduced_prec:
+            grads = self._opt.get_unscaled_gradients(grads)
         norm = tf.linalg.global_norm(grads)
         if self._clip:
             grads, _ = tf.clip_by_global_norm(grads, self._clip, norm)
