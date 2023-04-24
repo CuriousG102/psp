@@ -124,85 +124,99 @@ class Dreamer(tools.Module):
     def _train(self, data, log_images):
         if self._c.use_unet or self._c.use_color_mask:
             data = data.copy()
-        with tf.GradientTape() as mask_tape:
-            with tf.GradientTape(persistent=True) as model_tape:
-                # In new model, predict soft-mask here, with warmup schedule.
-                if self._c.use_unet:
-                    data['true_image'] = data['image']
-                    true_image = tf.reshape(
-                        data['image'], (-1,) + tuple(data['image'].shape[-3:]))
-                    mask = self._unet(true_image)
-                    image_shape = data['image'].shape
-                    data['image'] = tf.reshape(mask * true_image, image_shape)
-                    mask = tf.reshape(mask, image_shape[:-1] + [1])
-                elif self._c.use_color_mask:
-                    data['true_image'] = data['image']
-                    true_image = tf.reshape(
-                        data['image'], (-1,) + tuple(data['image'].shape[-3:]))
-                    mask = self.get_color_mask(true_image)
-                    image_shape = data['image'].shape
-                    data['image'] = tf.reshape(mask[..., tf.newaxis] * true_image, image_shape)
-                    mask = tf.reshape(mask, image_shape[:-1] + [1])
-                else:
-                    mask = None
-                embed = self._encode(data)
-                post, prior = self._dynamics.observe(embed, data['action'])
-                with mask_tape.stop_recording():
-                    feat = self._dynamics.get_feat(post)
+        with tf.GradientTape(persistent=True) as model_tape:
+            # In new model, predict soft-mask here, with warmup schedule.
+            if self._c.use_unet:
+                data['true_image'] = data['image']
+                true_image = tf.reshape(
+                    data['image'], (-1,) + tuple(data['image'].shape[-3:]))
+                mask = self._unet(true_image)
+                image_shape = data['image'].shape
+                data['image'] = tf.reshape(mask * true_image, image_shape)
+                mask = tf.reshape(mask, image_shape[:-1] + [1])
+            elif self._c.use_color_mask:
+                data['true_image'] = data['image']
+                true_image = tf.reshape(
+                    data['image'], (-1,) + tuple(data['image'].shape[-3:]))
+                mask = self.get_color_mask(true_image)
+                image_shape = data['image'].shape
+                data['image'] = tf.reshape(mask[..., tf.newaxis] * true_image, image_shape)
+                mask = tf.reshape(mask, image_shape[:-1] + [1])
+            else:
+                mask = None
+            embed = self._encode(data)
+            post, prior = self._dynamics.observe(embed, data['action'])
+            feat = self._dynamics.get_feat(post)
 
-                    image_pred = self._decode(feat)
-                    reward_pred = self._reward(feat)
+            image_pred = self._decode(feat)
+            reward_pred = self._reward(feat)
 
-                    likes = tools.AttrDict()
-                    # Todo: Maybe weight image log prob loss according to mask weights?
-                    likes.image = (
-                        tf.reduce_mean(image_pred.log_prob(data['image']))
-                        * self._c.image_loss_scale)
-                    likes.reward = tf.reduce_mean(reward_pred.log_prob(data['reward']))
-                    if self._c.pcont:
-                        pcont_pred = self._pcont(feat)
-                        pcont_target = self._c.discount * data['discount']
-                        likes.pcont = tf.reduce_mean(pcont_pred.log_prob(pcont_target))
-                        likes.pcont *= self._c.pcont_scale
+            likes = tools.AttrDict()
+            # Todo: Maybe weight image log prob loss according to mask weights?
+            likes.image = (
+                tf.reduce_mean(image_pred.log_prob(data['image']))
+                * self._c.image_loss_scale)
+            likes.reward = tf.reduce_mean(reward_pred.log_prob(data['reward']))
+            if self._c.pcont:
+                pcont_pred = self._pcont(feat)
+                pcont_target = self._c.discount * data['discount']
+                likes.pcont = tf.reduce_mean(pcont_pred.log_prob(pcont_target))
+                likes.pcont *= self._c.pcont_scale
 
-                    prior_dist = self._dynamics.get_dist(prior)
-                    post_dist = self._dynamics.get_dist(post)
-                    div = tf.reduce_mean(tfd.kl_divergence(post_dist, prior_dist))
-                    div = tf.maximum(div, self._c.free_nats)
+            prior_dist = self._dynamics.get_dist(prior)
+            post_dist = self._dynamics.get_dist(post)
+            div = tf.reduce_mean(tfd.kl_divergence(post_dist, prior_dist))
+            div = tf.maximum(div, self._c.free_nats)
 
-                    model_loss = self._c.kl_scale * div - sum(likes.values())
+            # In new model, add an L1 loss for the mask, with lambda hparam.
+            model_loss = self._c.kl_scale * div - sum(likes.values())
+            if self._c.use_unet or self._c.use_color_mask:
+                mask_l1 = tf.math.reduce_mean(tf.math.abs(mask) + 1e-3)
+                mask_loss = -likes.reward
+                mask_loss += (
+                    tf.math.sigmoid(
+                        self.mask_l1_sigmoid_steepness * (
+                            mask_l1 - self.mask_l1_max
+                        )
+                    ) - tf.math.sigmoid(
+                        self.mask_l1_sigmoid_steepness * (
+                            mask_l1 - self.mask_l1_min
+                        )
+                    )
+                )
+                mask_loss /= float(self._strategy.num_replicas_in_sync)
+            else:
+                mask_l1 = None
+            model_loss /= float(self._strategy.num_replicas_in_sync)
 
-            with tf.GradientTape() as actor_tape:
-                imag_feat = self._imagine_ahead(post)
-                with mask_tape.stop_recording():
-                    reward = self._reward(imag_feat).mode()
-                    if self._c.pcont:
-                        pcont = self._pcont(imag_feat).mean()
-                    else:
-                        pcont = self._c.discount * tf.ones_like(reward)
-                    value = self._value(imag_feat).mode()
-                    returns = tools.lambda_return(
-                        reward[:-1], value[:-1], pcont[:-1],
-                        bootstrap=value[-1], lambda_=self._c.disclam, axis=0)
-                    discount = tf.stop_gradient(tf.math.cumprod(tf.concat(
-                        [tf.ones_like(pcont[:1]), pcont[:-2]], 0), 0))
-                    actor_loss = -tf.reduce_mean(discount * returns)
-                    actor_loss /= float(self._strategy.num_replicas_in_sync)
+        with tf.GradientTape() as actor_tape:
+            imag_feat = self._imagine_ahead(post)
+            reward = self._reward(imag_feat).mode()
+            if self._c.pcont:
+                pcont = self._pcont(imag_feat).mean()
+            else:
+                pcont = self._c.discount * tf.ones_like(reward)
+            value = self._value(imag_feat).mode()
+            returns = tools.lambda_return(
+                reward[:-1], value[:-1], pcont[:-1],
+                bootstrap=value[-1], lambda_=self._c.disclam, axis=0)
+            discount = tf.stop_gradient(tf.math.cumprod(tf.concat(
+                [tf.ones_like(pcont[:1]), pcont[:-2]], 0), 0))
+            actor_loss = -tf.reduce_mean(discount * returns)
+            actor_loss /= float(self._strategy.num_replicas_in_sync)
 
-            with tf.GradientTape() as value_tape:
-                value_pred = self._value(imag_feat)[:-1]
-                target = tf.stop_gradient(returns)
-                value_loss = - \
-                    tf.reduce_mean(discount * value_pred.log_prob(target))
-                value_loss /= float(self._strategy.num_replicas_in_sync)
-            value_norm = self._value_opt(value_tape, value_loss)
-            mask_loss = -value_norm**2
+        with tf.GradientTape() as value_tape:
+            value_pred = self._value(imag_feat)[:-1]
+            target = tf.stop_gradient(returns)
+            value_loss = - \
+                tf.reduce_mean(discount * value_pred.log_prob(target))
+            value_loss /= float(self._strategy.num_replicas_in_sync)
 
-        if self._mask_opt:
-            self._mask_opt(mask_tape, mask_loss)
         model_norm = self._model_opt(model_tape, model_loss)
+        if self._mask_opt:
+            self._mask_opt(model_tape, mask_loss)
         actor_norm = self._actor_opt(actor_tape, actor_loss)
-        mask_l1 = tf.math.reduce_mean(tf.math.abs(mask) + 1e-3)
+        value_norm = self._value_opt(value_tape, value_loss)
 
         if tf.distribute.get_replica_context().replica_id_in_sync_group == 0:
             if self._c.log_scalars:

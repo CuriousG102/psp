@@ -188,7 +188,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         )
 
         self.color_bg = color_grid_utils.ColorGridBackground(
-            domain_name=domain_name,
+           domain_name=domain_name,
             task_name=task_name,
             num_cells_per_dim=num_cells_per_dim,
             num_colors_per_cell=num_colors_per_cell,
