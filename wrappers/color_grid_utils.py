@@ -11,6 +11,7 @@ class EvilEnum(enum.Enum):
     EVIL_SEQUENCE = enum.auto()
     MINIMUM_EVIL = enum.auto()
     RANDOM = enum.auto()
+    COLOR = enum.auto()
     NONE = enum.auto()
 
 
@@ -68,6 +69,8 @@ def get_min_colors_needed(
     elif evil_level is EvilEnum.RANDOM:
         return 2
     elif evil_level is EvilEnum.NONE:
+        return 0
+    elif evil_level is EvilEnum.COLOR:
         return 0
     else:
         raise ValueError(f'{evil_level} not implemented.')
@@ -217,6 +220,7 @@ class ColorGridBackground:
             action_dims_to_split=[],
             action_power=2,
             action_splits=None,
+            bg_color=None,
             height=84,
             width=84,
             random_seed=1,
@@ -405,9 +409,22 @@ class ColorGridBackground:
                     action_splits))
 
         np.random.seed(random_seed)
-        self._color_grid = np.random.randint(255, size=[
-            self._num_cells_per_dim, self._num_cells_per_dim,
-            self._num_colors_per_cell, 3])
+        if evil_level is EvilEnum.COLOR:
+            self._color_grid = np.repeat(
+                np.repeat(
+                    np.reshape(
+                        np.array(bg_color),
+                        (1, 1, 1, -1)
+                    ),
+                    self._num_cells_per_dim, axis=1),
+                self._num_cells_per_dim, axis=0
+            )
+        else:
+            self._color_grid = np.random.randint(255, size=[
+                self._num_cells_per_dim, self._num_cells_per_dim,
+                self._num_colors_per_cell, 3])
+        assert evil_level is not EvilEnum.COLOR or bg_color is not None
+        self._bg_color = bg_color
 
     def get_background_image(self, t, action, reward) -> np.array:
         """Returns appropriate background image for t, action, reward.
@@ -428,12 +445,13 @@ class ColorGridBackground:
             (t, action, reward) given the ColorGridBackground initialization.
         """
         if ((action is None and reward is None)
-                or self._evil_level is EvilEnum.RANDOM):
+                or self._evil_level is EvilEnum.RANDOM
+                or self._evil_level is EvilEnum.COLOR):
             random_idx = np.random.randint(
                 self._num_colors_per_cell,
                 size=[self._num_cells_per_dim, self._num_cells_per_dim, 1, 1])
             color_grid = np.take_along_axis(
-                self._color_grid, random_idx, 2).squeeze()
+                self._color_grid, random_idx, 2).squeeze(axis=2)
         elif self._evil_level is EvilEnum.MAXIMUM_EVIL:
             reward_idx = get_reward_idx(
                 reward, self.reward_range, self.colors_per_reward_range)

@@ -17,6 +17,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         action_dims_to_split=[],
         action_power=2,
         action_splits=None,
+        bg_color=None,
         no_agent=False,
         task_kwargs=None,
         visualize_reward={},
@@ -196,6 +197,7 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
             action_dims_to_split=action_dims_to_split,
             action_power=action_power,
             action_splits=action_splits,
+            bg_color=bg_color,
             height=height,
             width=width,
             random_seed=task_kwargs.get('random', 1)

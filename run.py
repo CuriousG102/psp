@@ -31,6 +31,7 @@ EVIL_CHOICES = {
     'action_cross_sequence': color_grid_utils.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
     'minimum': color_grid_utils.EvilEnum.MINIMUM_EVIL,
     'random': color_grid_utils.EvilEnum.RANDOM,
+    'color': color_grid_utils.EvilEnum.COLOR,
     'none': color_grid_utils.EvilEnum.NONE
 }
 
@@ -71,6 +72,8 @@ def make_env(config, writer, prefix, datadir, store):
                 'width': config.image_size,
                 'camera_id': 0,
                 'frame_skip': config.action_repeat,
+                'bg_color': ([int(i) for i in config.bg_color]
+                             if config.bg_color else None),
                 'no_agent': config.no_agent,
             },
         )
@@ -189,6 +192,7 @@ if __name__ == '__main__':
     parser.add_argument('--action_splits', nargs='*', type=int)
     parser.add_argument('--no_agent', action='store_true')
     parser.add_argument('--agent', dest='no_agent', action='store_false')
+    parser.add_argument('--bg_color', nargs='*')
     parser.set_defaults(no_agent=False)
     args, remaining = parser.parse_known_args()
     config_path = 'tia/Dreamer/train_configs/' + args.method + '.yaml'
