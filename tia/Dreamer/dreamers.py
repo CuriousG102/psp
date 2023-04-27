@@ -131,53 +131,42 @@ class Dreamer(tools.Module):
     def _train(self, data, log_images):
         if self._c.use_unet or self._c.use_color_mask:
             data = data.copy()
-        # with tf.GradientTape() as mask_tape:
-        #     # In new model, predict soft-mask here, with warmup schedule.
-        #     if self._mask_opt:
-        #         data['true_image'] = data['image']
-        #         true_image = tf.reshape(
-        #             data['image'], (-1,) + tuple(data['image'].shape[-3:]))
-        #         true_mask = ~(
-        #                 (true_image[..., 2] > true_image[..., 1])
-        #                 & (true_image[..., 2] > true_image[..., 0]))
-        #         if self._c.use_unet:
-        #             mask = self._unet(tf.cast(true_image, tf.float32))
-        #         elif self._c.use_color_mask:
-        #             mask = self.get_color_mask(true_image)
-        #         else:
-        #             raise ValueError('Unsupported mask type')
-        #         image_shape = data['image'].shape
-        #         data['image'] = tf.reshape(tf.cast(mask, tf.float16) * true_image, image_shape)
-        #         mask = tf.reshape(mask, image_shape[:-1] + [1])
-        #         true_mask = tf.reshape(true_mask, image_shape[:-1] + [1])
-        #
-        #     if self._mask_opt:
-        #         true_mask = tf.cast(true_mask, tf.float32)
-        #         mask_loss = -tf.reduce_mean(
-        #             true_mask * tf.math.log(mask)
-        #             + (1 - true_mask) * tf.math.log(1 - mask))
-        #     else:
-        #         mask_loss = None
-        #
-        # if self._mask_opt:
-        #     mask_norm = self._mask_opt(mask_tape, mask_loss)
-        # else:
-        #     mask_norm = None
+        with tf.GradientTape() as mask_tape:
+            if self._mask_opt:
+                data['true_image'] = tf.identity(data['image'])
+                true_image = tf.reshape(
+                    data['image'], (-1,) + tuple(data['image'].shape[-3:]))
+                true_mask = ~(
+                        (true_image[..., 2] > true_image[..., 1])
+                        & (true_image[..., 2] > true_image[..., 0]))
+                if self._c.use_unet:
+                    mask_logits = self._unet(tf.cast(true_image, tf.float32))
+                    mask = tf.math.sigmoid(mask_logits)
+                # elif self._c.use_color_mask:
+                #     mask = self.get_color_mask(true_image)
+                else:
+                    raise ValueError('Unsupported mask type')
+                image_shape = data['image'].shape
+                data['image'] = (
+                    tf.cast(mask, tf.float16) * true_image
+                    + (1 - tf.cast(mask, tf.float16)) * -.5)
+                data['image'] = tf.reshape(data['image'], image_shape)
+                mask_logits = tf.reshape(mask_logits, image_shape[:-1] + [1])
+                mask = tf.reshape(mask, image_shape[:-1] + [1])
+                true_mask = tf.reshape(true_mask, image_shape[:-1] + [1])
 
-        data['true_image'] = tf.identity(data['image'])
-        true_image = data['image']
-        true_mask = ~(
-                (true_image[..., 2] > true_image[..., 1])
-                & (true_image[..., 2] > true_image[..., 0]))[..., tf.newaxis]
-        # The gold standard
-        # data['image'] = tf.where(true_mask, true_image, -.5)
-        # Attempt #1 to match the performance of tf.where.
-        true_mask = tf.cast(true_mask, tf.float16)
-        data['image'] = true_mask * true_image + (1 - true_mask) * -.5
+            if self._mask_opt:
+                true_mask = tf.cast(true_mask, tf.float32)
+                mask_loss = tf.reduce_mean(
+                    tf.nn.sigmoid_cross_entropy_with_logits(
+                        labels=true_mask, logits=mask_logits))
+            else:
+                mask_loss = None
 
-        mask = tf.cast(true_mask, tf.float16)
-        mask_loss = None
-        mask_norm = None
+        if self._mask_opt:
+            mask_norm = self._mask_opt(mask_tape, mask_loss)
+        else:
+            mask_norm = None
 
         with tf.GradientTape() as model_tape:
             embed = self._encode(data)
@@ -261,7 +250,7 @@ class Dreamer(tools.Module):
             tf.keras.mixed_precision.set_global_policy('float32')
             self._unet = custom_unet(
                 input_shape=(self._c.image_size, self._c.image_size, 3),
-                filters=8, num_layers=3)
+                filters=8, num_layers=3, output_activation=None)
             tf.keras.mixed_precision.set_global_policy('mixed_float16')
         if self._c.use_color_mask:
             if self._c.color_mask_hardcode:
