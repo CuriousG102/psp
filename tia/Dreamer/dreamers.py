@@ -169,7 +169,12 @@ class Dreamer(tools.Module):
         true_mask = ~(
                 (true_image[..., 2] > true_image[..., 1])
                 & (true_image[..., 2] > true_image[..., 0]))[..., tf.newaxis]
-        data['image'] = tf.where(true_mask, true_image, -.5)
+        # The gold standard
+        # data['image'] = tf.where(true_mask, true_image, -.5)
+        # Attempt #1 to match the performance of tf.where.
+        true_mask = tf.cast(true_mask, tf.float16)
+        data['image'] = true_mask * true_image + (1 - true_mask) * -.5
+
         mask = tf.cast(true_mask, tf.float16)
         mask_loss = None
         mask_norm = None
