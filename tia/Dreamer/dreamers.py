@@ -94,6 +94,7 @@ class Dreamer(tools.Module):
                 obs['image'], (-1,) + tuple(obs['image'].shape[-3:]))
             mask_logits = self._unet(tf.cast(true_image, tf.float32))
             mask = tf.math.sigmoid(mask_logits)
+            mask = tf.cast(mask > .5, tf.float32)
             image_shape = obs['image'].shape
             obs['image'] = (
                     tf.cast(mask, tf.float16) * true_image
@@ -133,6 +134,7 @@ class Dreamer(tools.Module):
                 if self._c.use_unet:
                     mask_logits = self._unet(tf.cast(true_image, tf.float32))
                     mask = tf.math.sigmoid(mask_logits)
+                    mask = tf.cast(mask > .5, tf.float32)
                 # elif self._c.use_color_mask:
                 #     mask = self.get_color_mask(true_image)
                 else:
