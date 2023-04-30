@@ -169,6 +169,18 @@ class Dreamer(tools.Module):
         true_mask = ~(
                 (true_image[..., 2] > true_image[..., 1])
                 & (true_image[..., 2] > true_image[..., 0]))[..., tf.newaxis]
+        # Introduce probabilistic dilation to measure robustness of
+        # downstream model to mask error.
+        true_mask = tf.cast(true_mask, tf.int32)
+        dilated_mask = tf.nn.conv2d(
+            true_mask, tf.ones((5, 5, 1, 1), dtype=true_mask.dtype), 1, 'SAME')
+        true_mask = tf.cast(true_mask, tf.bool)
+        dilated_mask = tf.cast(dilated_mask, tf.bool)
+        dilated_mask &= ~true_mask
+        dilated_mask &= tf.random.uniform(dilated_mask.shape) < .5
+
+        true_mask = true_mask | dilated_mask
+
         # The gold standard
         # data['image'] = tf.where(true_mask, true_image, -.5)
         # Attempt #1 to match the performance of tf.where.
@@ -249,7 +261,7 @@ class Dreamer(tools.Module):
                     actor_norm,
                     mask_l1=mask_l1, mask_loss=mask_loss, mask_norm=mask_norm)
             if tf.equal(log_images, True):
-                self._image_summaries(data, embed, image_pred, mask)
+                self._image_summaries(data, embed, image_pred, mask, dilated_mask=dilated_mask)
 
     def _build_model(self):
         acts = dict(
@@ -388,7 +400,7 @@ class Dreamer(tools.Module):
         if mask_norm is not None:
             self._metrics['mask_norm'].update_state(mask_norm)
 
-    def _image_summaries(self, data, embed, image_pred, mask=None):
+    def _image_summaries(self, data, embed, image_pred, mask=None, dilated_mask=None):
         recon = image_pred.mode()[:6]
         init, _ = self._dynamics.observe(embed[:6, :5], data['action'][:6, :5])
         init = {k: v[:, -1] for k, v in init.items()}
@@ -400,8 +412,10 @@ class Dreamer(tools.Module):
             truth = data['true_image'][:6] + 0.5
             masked_truth = data['image'][:6] + 0.5
             mask = mask[:6]
+            dilated_mask = dilated_mask[:6]
             error = (model - masked_truth + 1) / 2
-            openl = tf.concat([truth, tf.repeat(tf.cast(mask, tf.float16), 3, -1), masked_truth, model, error], 2)
+            openl = tf.concat([truth, tf.repeat(tf.cast(mask, tf.float16), 3, -1),
+                               tf.repeat(tf.cast(dilated_mask, tf.float16), 3, -1), masked_truth, model, error], 2)
         else:
             truth = data['image'][:6] + 0.5
             error = (model - truth + 1) / 2
