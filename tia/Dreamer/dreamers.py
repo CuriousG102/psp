@@ -234,7 +234,7 @@ class Dreamer(tools.Module):
                     mask_l1=mask_l1, mask_loss=mask_loss, mask_norm=mask_norm,
                     mask_l1_error=mask_l1_error)
             if tf.equal(log_images, True):
-                self._image_summaries(data, embed, image_pred, mask)
+                self._image_summaries(data, embed, image_pred, mask, true_mask)
 
     def _build_model(self):
         acts = dict(
@@ -377,20 +377,31 @@ class Dreamer(tools.Module):
         if mask_l1_error is not None:
             self._metrics['mask_l1_error'].update_state(mask_l1_error)
 
-    def _image_summaries(self, data, embed, image_pred, mask=None):
+    def _image_summaries(self, data, embed, image_pred, mask=None, true_mask=None):
         recon = image_pred.mode()[:6]
         init, _ = self._dynamics.observe(embed[:6, :5], data['action'][:6, :5])
         init = {k: v[:, -1] for k, v in init.items()}
         prior = self._dynamics.imagine(data['action'][:6, 5:], init)
         openl = self._decode(self._dynamics.get_feat(prior)).mode()
         model = tf.concat([recon[:, :5] + 0.5, openl + 0.5], 1)
+        mask = tf.repeat(tf.cast(mask, tf.float16), 3, -1)
+        green = tf.zeros_like(mask)
+        green[..., 1] = 1.
+        green *= tf.cast(mask & ~true_mask, tf.float16)
+        red = tf.zeros_like(mask)
+        green[..., 0] = 1.
+        red *= tf.cast(~mask & true_mask, tf.float16)
+        diff = red + green
+        diff = tf.nn.conv2d(
+            diff, tf.ones((7, 7, 3, 3), dtype=true_mask.dtype), 1, 'SAME')
+        diff = tf.where(tf.math.reduce_sum(axis=-1) > 0, diff, mask)
 
         if mask is not None:
             truth = data['true_image'][:6] + 0.5
             masked_truth = data['image'][:6] + 0.5
             mask = mask[:6]
             error = (model - masked_truth + 1) / 2
-            openl = tf.concat([truth, tf.repeat(tf.cast(mask, tf.float16), 3, -1), masked_truth, model, error], 2)
+            openl = tf.concat([truth, mask, diff, masked_truth, model, error], 2)
         else:
             truth = data['image'][:6] + 0.5
             error = (model - truth + 1) / 2
