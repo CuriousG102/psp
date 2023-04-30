@@ -384,22 +384,25 @@ class Dreamer(tools.Module):
         prior = self._dynamics.imagine(data['action'][:6, 5:], init)
         openl = self._decode(self._dynamics.get_feat(prior)).mode()
         model = tf.concat([recon[:, :5] + 0.5, openl + 0.5], 1)
-        mask = tf.repeat(tf.cast(mask, tf.float16), 3, -1)
-        green = tf.zeros_like(mask)
-        green[..., 1] = 1.
-        green *= tf.cast(mask & ~true_mask, tf.float16)
-        red = tf.zeros_like(mask)
-        green[..., 0] = 1.
-        red *= tf.cast(~mask & true_mask, tf.float16)
-        diff = red + green
-        diff = tf.nn.conv2d(
-            diff, tf.ones((7, 7, 3, 3), dtype=true_mask.dtype), 1, 'SAME')
-        diff = tf.where(tf.math.reduce_sum(axis=-1) > 0, diff, mask)
+        green = tf.ones(mask.shape[:-1], dtype=tf.float16)
+        green *= tf.cast(tf.squeeze(tf.cast(mask, tf.bool)) & ~tf.squeeze(tf.cast(true_mask, tf.bool)), tf.float16)
+        red = tf.ones(mask.shape[:-1], dtype=tf.float16)
+        red *= tf.cast(~tf.squeeze(tf.cast(mask, tf.bool)) & tf.squeeze(tf.cast(true_mask, tf.bool)), tf.float16)
+        diff = tf.concat(
+            [
+                tf.nn.conv2d(red[..., tf.newaxis], tf.ones((5, 5, 1, 1,), dtype=red.dtype), 1, 'SAME'),
+                tf.nn.conv2d(green[..., tf.newaxis], tf.ones((5, 5, 1, 1,), dtype=green.dtype), 1, 'SAME'),
+                tf.zeros_like(red[..., tf.newaxis])
+            ], axis=-1)
+        mask = tf.cast(mask, tf.float16)
+        mask = tf.repeat(mask, 3, -1)
+        diff = tf.where(tf.math.reduce_sum(diff, axis=-1, keepdims=True) > 0, diff, mask)
 
         if mask is not None:
             truth = data['true_image'][:6] + 0.5
             masked_truth = data['image'][:6] + 0.5
             mask = mask[:6]
+            diff = diff[:6]
             error = (model - masked_truth + 1) / 2
             openl = tf.concat([truth, mask, diff, masked_truth, model, error], 2)
         else:
