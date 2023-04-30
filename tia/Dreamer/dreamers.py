@@ -234,7 +234,8 @@ class Dreamer(tools.Module):
                     mask_l1=mask_l1, mask_loss=mask_loss, mask_norm=mask_norm,
                     mask_l1_error=mask_l1_error)
             if tf.equal(log_images, True):
-                self._image_summaries(data, embed, image_pred, mask, true_mask)
+                self._image_summaries(data, embed, image_pred, mask, true_mask,
+                                      imag_feat)
 
     def _build_model(self):
         acts = dict(
@@ -377,7 +378,9 @@ class Dreamer(tools.Module):
         if mask_l1_error is not None:
             self._metrics['mask_l1_error'].update_state(mask_l1_error)
 
-    def _image_summaries(self, data, embed, image_pred, mask=None, true_mask=None):
+    def _image_summaries(
+            self, data, embed, image_pred, mask=None, true_mask=None,
+            policy_imag_feat=None):
         recon = image_pred.mode()[:6]
         init, _ = self._dynamics.observe(embed[:6, :5], data['action'][:6, :5])
         init = {k: v[:, -1] for k, v in init.items()}
@@ -411,6 +414,14 @@ class Dreamer(tools.Module):
             openl = tf.concat([truth, model, error], 2)
         tools.graph_summary(
             self._writer, tools.video_summary, self._step, 'agent/openl', openl)
+        if policy_imag_feat is not None:
+            policy_imag_feat = policy_imag_feat[:, :6, :]
+            policy_imag_feat = tf.transpose(policy_imag_feat, [1, 0, 2])
+            policy_imag_pred = self._decode(policy_imag_feat).mode() + 0.5
+
+            tools.graph_summary(
+                self._writer, tools.video_summary, self._step,
+                'agent/imagined', policy_imag_pred)
 
     def image_summary_from_data(self, data):
         truth = data['image'][:6] + 0.5
