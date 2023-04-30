@@ -220,8 +220,10 @@ class Dreamer(tools.Module):
         actor_norm = self._actor_opt(actor_tape, actor_loss)
         if mask is not None:
             mask_l1 = tf.math.reduce_mean(tf.math.abs(mask) + 1e-3)
+            mask_l1_error = tf.math.reduce_sum(tf.math.abs(mask - true_mask))
         else:
             mask_l1 = None
+            mask_l1_error = None
 
         if tf.distribute.get_replica_context().replica_id_in_sync_group == 0:
             if self._c.log_scalars:
@@ -229,7 +231,8 @@ class Dreamer(tools.Module):
                     data, feat, prior_dist, post_dist, likes, div,
                     model_loss, value_loss, actor_loss, model_norm, value_norm,
                     actor_norm,
-                    mask_l1=mask_l1, mask_loss=mask_loss, mask_norm=mask_norm)
+                    mask_l1=mask_l1, mask_loss=mask_loss, mask_norm=mask_norm,
+                    mask_l1_error=mask_l1_error)
             if tf.equal(log_images, True):
                 self._image_summaries(data, embed, image_pred, mask)
 
@@ -349,7 +352,9 @@ class Dreamer(tools.Module):
     def _scalar_summaries(
             self, data, feat, prior_dist, post_dist, likes, div,
             model_loss, value_loss, actor_loss, model_norm, value_norm,
-            actor_norm, mask_l1=None, mask_loss=None, mask_norm=None):
+            actor_norm, mask_l1=None, mask_loss=None, mask_norm=None,
+            mask_l1_error=None
+    ):
 
         self._metrics['model_grad_norm'].update_state(model_norm)
         self._metrics['value_grad_norm'].update_state(value_norm)
@@ -369,6 +374,8 @@ class Dreamer(tools.Module):
             self._metrics['mask_loss'].update_state(mask_loss)
         if mask_norm is not None:
             self._metrics['mask_norm'].update_state(mask_norm)
+        if mask_l1_error is not None:
+            self._metrics['mask_l1_error'].update_state(mask_l1_error)
 
     def _image_summaries(self, data, embed, image_pred, mask=None):
         recon = image_pred.mode()[:6]
