@@ -88,26 +88,18 @@ class Dreamer(tools.Module):
             latent, action = state
         # TODO: Modify here too.
         obs = preprocess(obs, self._c)
-        # if self._c.use_unet:
-        #     obs['true_image'] = obs['image']
-        #     true_image = tf.reshape(
-        #         obs['image'], (-1,) + tuple(obs['image'].shape[-3:]))
-        #     mask = self._unet(tf.cast(true_image, tf.float32))
-        #     image_shape = obs['image'].shape
-        #     obs['image'] = tf.reshape(tf.cast(mask, tf.float16) * true_image, image_shape)
-        # elif self._c.use_color_mask:
-        #     obs['true_image'] = obs['image']
-        #     true_image = tf.reshape(
-        #         obs['image'], (-1,) + tuple(obs['image'].shape[-3:]))
-        #     mask = self.get_color_mask(true_image)
-        #     image_shape = obs['image'].shape
-        #     obs['image'] = tf.reshape(mask[..., tf.newaxis] * true_image, image_shape)
-        obs['true_image'] = tf.identity(obs['image'])
-        true_image = obs['image']
-        true_mask = ~(
-                (true_image[..., 2] > true_image[..., 1])
-                & (true_image[..., 2] > true_image[..., 0]))[..., tf.newaxis]
-        obs['image'] = tf.where(true_mask, true_image, -.5)
+        if self._c.use_unet:
+            obs['true_image'] = tf.identity(obs['image'])
+            true_image = tf.reshape(
+                obs['image'], (-1,) + tuple(obs['image'].shape[-3:]))
+            mask_logits = self._unet(tf.cast(true_image, tf.float32))
+            mask = tf.math.sigmoid(mask_logits)
+            mask = tf.cast(mask > .5, tf.float32)
+            image_shape = obs['image'].shape
+            obs['image'] = (
+                    tf.cast(mask, tf.float16) * true_image
+                    + (1 - tf.cast(mask, tf.float16)) * -.5)
+            obs['image'] = tf.reshape(obs['image'], image_shape)
 
         embed = self._encode(obs)
         latent, _ = self._dynamics.obs_step(latent, action, embed)
@@ -142,6 +134,7 @@ class Dreamer(tools.Module):
                 if self._c.use_unet:
                     mask_logits = self._unet(tf.cast(true_image, tf.float32))
                     mask = tf.math.sigmoid(mask_logits)
+                    mask = tf.cast(mask > .5, tf.float32)
                 # elif self._c.use_color_mask:
                 #     mask = self.get_color_mask(true_image)
                 else:
