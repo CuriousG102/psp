@@ -1,6 +1,7 @@
 dmc: 
 
   use_unet: false
+  mask_hardcode: false
   unet_lambda: 1
   use_color_mask: false
   color_mask_hardcode: false
