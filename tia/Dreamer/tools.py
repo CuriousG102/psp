@@ -161,7 +161,7 @@ def save_episodes(directory, episodes):
                 f2.write(f1.read())
 
 
-def load_episodes(directory, rescan, length=None, balance=False, seed=0):
+def load_episodes(directory, rescan, length=None, balance=False, seed=0, time_weight=None):
     directory = pathlib.Path(directory).expanduser()
     random = np.random.RandomState(seed)
     cache = {}
@@ -176,8 +176,21 @@ def load_episodes(directory, rescan, length=None, balance=False, seed=0):
                     print(f'Could not load episode: {e}')
                     continue
                 cache[filename] = episode
+
         keys = list(cache.keys())
-        for index in random.choice(len(keys), rescan):
+        if time_weight is not None:
+            timestamps = np.array([
+                datetime.datetime.strptime(
+                    key.name.split('-')[0], '%Y%m%dT%H%M%S').timestamp()
+                for key in keys
+            ])
+            timestamps = np.argsort(np.argsort(timestamps))
+            key_sample_probs = time_weight**timestamps
+            key_sample_probs /= key_sample_probs.sum()
+        else:
+            key_sample_probs = None
+
+        for index in random.choice(len(keys), rescan, p=key_sample_probs):
             episode = cache[keys[index]]
             if length:
                 total = len(next(iter(episode.values())))

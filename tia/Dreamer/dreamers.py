@@ -19,7 +19,7 @@ def load_dataset(directory, config):
 
     def generator(): return tools.load_episodes(
         directory, config.train_steps, config.batch_length,
-        config.dataset_balance)
+        config.dataset_balance, time_weight=config.time_weight)
     dataset = tf.data.Dataset.from_generator(generator, types, shapes)
     dataset = dataset.batch(config.batch_size, drop_remainder=True)
     dataset = dataset.map(functools.partial(preprocess, config=config))
