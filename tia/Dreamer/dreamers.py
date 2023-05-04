@@ -499,9 +499,9 @@ class Dreamer(tools.Module):
         tools.graph_summary(
             self._writer, tools.video_summary, self._step, 'agent/openl', openl)
         if policy_imag_feat is not None:
-            policy_imag_feat = policy_imag_feat[:, :6:self._c.batch_length, :]
+            policy_imag_feat = policy_imag_feat[:, :6*self._c.batch_length:self._c.batch_length, :]
             policy_imag_feat = tf.transpose(policy_imag_feat, [1, 0, 2])
-            policy_reward = policy_reward[:, :6:self._c.batch_length]
+            policy_reward = policy_reward[:, :6*self._c.batch_length:self._c.batch_length]
             policy_reward = tf.transpose(policy_reward, [1, 0])
             policy_imag_pred = self._decode(policy_imag_feat).mode() + 0.5
             normalized_policy_reward = normalize_and_create_reward_video(
