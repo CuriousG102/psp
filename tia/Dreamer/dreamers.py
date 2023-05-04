@@ -279,7 +279,7 @@ class Dreamer(tools.Module):
                     mask_l1_error=mask_l1_error)
             if tf.equal(log_images, True):
                 self._image_summaries(data, embed, image_pred, mask, true_mask,
-                                      imag_feat)
+                                      imag_feat, reward_pred, reward)
 
     def _build_model(self):
         acts = dict(
@@ -421,10 +421,12 @@ class Dreamer(tools.Module):
             self._metrics['mask_norm'].update_state(mask_norm)
         if mask_l1_error is not None:
             self._metrics['mask_l1_error'].update_state(mask_l1_error)
+        self._metrics['reward_max'].update_state(
+            tf.math.reduce_max(data['reward']))
 
     def _image_summaries(
             self, data, embed, image_pred, mask=None, true_mask=None,
-            policy_imag_feat=None):
+            policy_imag_feat=None, reward_pred=None, policy_reward=None):
         recon = image_pred.mode()[:6]
         init, _ = self._dynamics.observe(embed[:6, :5], data['action'][:6, :5])
         init = {k: v[:, -1] for k, v in init.items()}
@@ -445,13 +447,51 @@ class Dreamer(tools.Module):
         mask = tf.repeat(mask, 3, -1)
         diff = tf.where(tf.math.reduce_sum(diff, axis=-1, keepdims=True) > 0, diff, mask)
 
+        reward_pred = reward_pred.mode()
+        reward_red = tf.constant([1, 0, 0], dtype=tf.float16)[
+            tf.newaxis, tf.newaxis, :]
+        reward_green = tf.constant([0, 0, 1], dtype=tf.float16)[
+            tf.newaxis, tf.newaxis, :]
+        reward_actual = data['reward']
+        min_reward_actual = 0
+        max_reward_actual = 2
+
+        def normalize_and_create_reward_video(reward):
+            normalized_reward = (reward - min_reward_actual) / (max_reward_actual - min_reward_actual)
+            normalized_reward = normalized_reward[..., tf.newaxis]
+            reward_color = (
+                reward_red * (1 - normalized_reward)
+                + reward_green * normalized_reward
+            )
+            reward_color = reward_color[:, :, tf.newaxis, tf.newaxis, :]
+            reward_color = tf.repeat(reward_color, 16, axis=2)
+            reward_color = tf.repeat(reward_color, data['true_image'].shape[3], axis=3)
+            return reward_color
+
+        normalized_reward_pred = normalize_and_create_reward_video(
+            reward_pred)
+        normalized_reward_actual = normalize_and_create_reward_video(
+            reward_actual)
+
+
         if mask is not None:
             truth = data['true_image'][:6] + 0.5
             masked_truth = data['image'][:6] + 0.5
             mask = mask[:6]
             diff = diff[:6]
+            normalized_reward_pred = normalized_reward_pred[:6]
+            normalized_reward_actual = normalized_reward_actual[:6]
             error = (model - masked_truth + 1) / 2
-            openl = tf.concat([truth, mask, diff, masked_truth, model, error], 2)
+            openl = tf.concat([
+                truth,
+                normalized_reward_actual,
+                mask,
+                diff,
+                masked_truth,
+                model,
+                normalized_reward_pred,
+                error],
+                2)
         else:
             truth = data['image'][:6] + 0.5
             error = (model - truth + 1) / 2
@@ -459,13 +499,18 @@ class Dreamer(tools.Module):
         tools.graph_summary(
             self._writer, tools.video_summary, self._step, 'agent/openl', openl)
         if policy_imag_feat is not None:
-            policy_imag_feat = policy_imag_feat[:, :6, :]
+            policy_imag_feat = policy_imag_feat[:, :6:self._c.batch_length, :]
             policy_imag_feat = tf.transpose(policy_imag_feat, [1, 0, 2])
+            policy_reward = policy_reward[:, :6:self._c.batch_length]
+            policy_reward = tf.transpose(policy_reward, [1, 0])
             policy_imag_pred = self._decode(policy_imag_feat).mode() + 0.5
+            normalized_policy_reward = normalize_and_create_reward_video(
+                tf.clip_by_value(policy_reward, min_reward_actual, max_reward_actual))
 
             tools.graph_summary(
                 self._writer, tools.video_summary, self._step,
-                'agent/imagined', policy_imag_pred)
+                'agent/imagined', tf.concat(
+                    [policy_imag_pred, normalized_policy_reward], 2))
 
     def image_summary_from_data(self, data):
         truth = data['image'][:6] + 0.5
