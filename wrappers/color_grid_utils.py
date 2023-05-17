@@ -14,6 +14,17 @@ class EvilEnum(enum.Enum):
     NONE = enum.auto()
 
 
+EVIL_CHOICE_CONVENIENCE_MAPPING = {
+    'max': EvilEnum.MAXIMUM_EVIL,
+    'reward': EvilEnum.EVIL_REWARD,
+    'action': EvilEnum.EVIL_ACTION,
+    'sequence': EvilEnum.EVIL_SEQUENCE,
+    'minimum': EvilEnum.MINIMUM_EVIL,
+    'random': EvilEnum.RANDOM,
+    'none': EvilEnum.NONE,
+}
+
+
 def split_action_space(action_dims, num_colors, power):
     # TODO: Add support for more variation in the future.
     assert num_colors == power ** len(action_dims)
