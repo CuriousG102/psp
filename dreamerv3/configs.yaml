@@ -316,3 +316,7 @@ no_evil:
     evil_level: none
     action_power: 1
     action_splits: [0, 0, 0, 0, 0, 0]
+
+no_kl_balance:
+  loss_scales.dyn: 0.5
+  loss_scales.rep: 0.5
