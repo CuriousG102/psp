@@ -12,6 +12,8 @@ class CheckTypesFilter(logging.Filter):
     return 'check_types' not in record.getMessage()
 logger.addFilter(CheckTypesFilter())
 
+import jax.numpy as jp
+
 from . import behaviors
 from . import jaxagent
 from . import jaxutils
@@ -77,7 +79,9 @@ class Agent(nj.Module):
     self.config.jax.jit and print('Tracing train function.')
     metrics = {}
     data = self.preprocess(data)
-    state, wm_outs, mets = self.wm.train(data, state)
+    # vf = None
+    vf = self.task_behavior.ac.critics['extr'].net
+    state, wm_outs, mets = self.wm.train(data, state, vf=vf)
     metrics.update(mets)
     context = {**data, **wm_outs['post']}
     start = tree_map(lambda x: x.reshape([-1] + list(x.shape[2:])), context)
@@ -141,20 +145,41 @@ class WorldModel(nj.Module):
     prev_action = jnp.zeros((batch_size, *self.act_space.shape))
     return prev_latent, prev_action
 
-  def train(self, data, state):
+  def train(self, data, state, vf=None):
     modules = [self.encoder, self.rssm, *self.heads.values()]
     mets, (state, outs, metrics) = self.opt(
-        modules, self.loss, data, state, has_aux=True)
+        modules, self.loss, data, state, vf=vf, has_aux=True)
     metrics.update(mets)
     return state, outs, metrics
 
-  def loss(self, data, state):
+  def get_embed_post_prior(self, data, state, vf=None):
     embed = self.encoder(data)
     prev_latent, prev_action = state
     prev_actions = jnp.concatenate([
-        prev_action[:, None], data['action'][:, :-1]], 1)
+      prev_action[:, None], data['action'][:, :-1]], 1)
     post, prior = self.rssm.observe(
-        embed, prev_actions, data['is_first'], prev_latent)
+      embed, prev_actions, data['is_first'], prev_latent)
+    return vf(post).mean() if vf is not None else None, (embed, post, prior,)
+
+  def loss(self, data, state, vf=None):
+    """
+    World Model loss
+
+    :param data:
+    :param state:
+    :param vf: vf. If passed in should be a function that takes an array
+      with last dimension representing posterior from world model and
+      outputs value. Will be used to take the derivative of value
+      function with regard to each state and weight loss terms of state
+      prediction according to their contribution.
+    :return:
+    """
+    if vf is None:
+      v_grad, (embed, post, prior) = self.get_embed_post_prior(data, state)
+    else:
+      embed_post_prior = jax.jacfwd(self.get_embed_post_prior, has_aux=True)
+      v_grad, (embed, post, prior) = embed_post_prior(data, state, vf=vf)
+
     dists = {}
     feats = {**post, 'embed': embed}
     for name, head in self.heads.items():
@@ -165,7 +190,22 @@ class WorldModel(nj.Module):
     losses['dyn'] = self.rssm.dyn_loss(post, prior, **self.config.dyn_loss)
     losses['rep'] = self.rssm.rep_loss(post, prior, **self.config.rep_loss)
     for key, dist in dists.items():
-      loss = -dist.log_prob(data[key].astype(jnp.float32))
+      # TODO: Weight loss by vgrad here, if vgrad is populated.
+      if v_grad is not None and key in self.encoder.cnn_shapes:
+        v_grad = v_grad[key]
+        batch_size = v_grad.shape[0]
+        batch_length = v_grad.shape[1]
+        num_examples = batch_size * batch_length
+        v_grad = v_grad.reshape(num_examples, num_examples, *v_grad.shape[4:])
+        v_grad = v_grad[jp.arange(num_examples), jp.arange(num_examples), ...]
+        v_grad = v_grad.reshape(batch_size, batch_length, *v_grad.shape[1:])
+
+        pred = dist.mean()
+        loss = ((v_grad * (pred - data[key].astype(jnp.float32))) ** 2).sum(
+          (-1, -2, -3)
+        )
+      else:
+        loss = -dist.log_prob(data[key].astype(jnp.float32))
       assert loss.shape == embed.shape[:2], (key, loss.shape)
       losses[key] = loss
     scaled = {k: v * self.scales[k] for k, v in losses.items()}
