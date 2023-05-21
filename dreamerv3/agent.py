@@ -1,3 +1,5 @@
+import functools
+
 import embodied
 import jax
 import jax.numpy as jnp
@@ -11,8 +13,6 @@ class CheckTypesFilter(logging.Filter):
   def filter(self, record):
     return 'check_types' not in record.getMessage()
 logger.addFilter(CheckTypesFilter())
-
-import jax.numpy as jp
 
 from . import behaviors
 from . import jaxagent
@@ -152,13 +152,21 @@ class WorldModel(nj.Module):
     metrics.update(mets)
     return state, outs, metrics
 
-  def get_embed_post_prior(self, data, state, vf=None):
-    embed = self.encoder(data)
+  def get_embed_post_prior(self, d_data, data, state, vf=None):
+    all_data = {}
+    all_data.update(d_data)
+    all_data.update(data)
+    embed = self.encoder(all_data)
     prev_latent, prev_action = state
-    prev_actions = jnp.concatenate([
-      prev_action[:, None], data['action'][:, :-1]], 1)
+    if vf is None:
+      prev_actions = jnp.concatenate([
+        prev_action[:, None], all_data['action'][:, :-1]], 1)
+    else:
+      prev_actions = jnp.concatenate([
+        prev_action[None], all_data['action'][:-1]], 0)
     post, prior = self.rssm.observe(
-      embed, prev_actions, data['is_first'], prev_latent)
+      embed, prev_actions, all_data['is_first'], prev_latent,
+      batch_free=vf is not None)
     return vf(post).mean() if vf is not None else None, (embed, post, prior,)
 
   def loss(self, data, state, vf=None):
@@ -175,10 +183,21 @@ class WorldModel(nj.Module):
     :return:
     """
     if vf is None:
-      v_grad, (embed, post, prior) = self.get_embed_post_prior(data, state)
+      v_grad, (embed, post, prior) = self.get_embed_post_prior({}, data, state)
     else:
-      embed_post_prior = jax.jacfwd(self.get_embed_post_prior, has_aux=True)
-      v_grad, (embed, post, prior) = embed_post_prior(data, state, vf=vf)
+      embed_post_prior = jax.vmap(jax.jacrev(
+          functools.partial(self.get_embed_post_prior, vf=vf), has_aux=True),
+          in_axes=[0, 0, 0], out_axes=0)
+
+      d_data = {}
+      for k in self.encoder.cnn_shapes:
+        if k in data:
+          d_data[k] = data[k]
+          del data[k]
+
+      v_grad, (embed, post, prior) = embed_post_prior(d_data, data, state)
+
+      data.update(d_data)
 
     dists = {}
     feats = {**post, 'embed': embed}
@@ -192,16 +211,12 @@ class WorldModel(nj.Module):
     for key, dist in dists.items():
       # TODO: Weight loss by vgrad here, if vgrad is populated.
       if v_grad is not None and key in self.encoder.cnn_shapes:
-        v_grad = v_grad[key]
-        batch_size = v_grad.shape[0]
-        batch_length = v_grad.shape[1]
-        num_examples = batch_size * batch_length
-        v_grad = v_grad.reshape(num_examples, num_examples, *v_grad.shape[4:])
-        v_grad = v_grad[jp.arange(num_examples), jp.arange(num_examples), ...]
-        v_grad = v_grad.reshape(batch_size, batch_length, *v_grad.shape[1:])
-
+        k_v_grad = v_grad[key]  # [B, L, L, H, W, C]
+        batch_length = k_v_grad.shape[1]
+        k_v_grad = k_v_grad[  # [B, L, H, W, C]
+             :, jnp.arange(batch_length), jnp.arange(batch_length), ...]
         pred = dist.mean()
-        loss = ((v_grad * (pred - data[key].astype(jnp.float32))) ** 2).sum(
+        loss = ((k_v_grad * (pred - data[key].astype(jnp.float32))) ** 2).sum(
           (-1, -2, -3)
         )
       else:

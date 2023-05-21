@@ -28,33 +28,40 @@ class RSSM(nj.Module):
     self._action_clip = action_clip
     self._kw = kw
 
-  def initial(self, bs):
+  def initial(self, bs, batch_free=False):
+    def maybe_squeeze(x):
+      if batch_free:
+        return x.squeeze(0)
+      return x
     if self._classes:
       state = dict(
-          deter=jnp.zeros([bs, self._deter], f32),
-          logit=jnp.zeros([bs, self._stoch, self._classes], f32),
-          stoch=jnp.zeros([bs, self._stoch, self._classes], f32))
+          deter=maybe_squeeze(jnp.zeros([bs, self._deter], f32)),
+          logit=maybe_squeeze(jnp.zeros([bs, self._stoch, self._classes], f32)),
+          stoch=maybe_squeeze(jnp.zeros([bs, self._stoch, self._classes], f32)))
     else:
       state = dict(
-          deter=jnp.zeros([bs, self._deter], f32),
-          mean=jnp.zeros([bs, self._stoch], f32),
-          std=jnp.ones([bs, self._stoch], f32),
-          stoch=jnp.zeros([bs, self._stoch], f32))
+          deter=maybe_squeeze(jnp.zeros([bs, self._deter], f32)),
+          mean=maybe_squeeze(jnp.zeros([bs, self._stoch], f32)),
+          std=maybe_squeeze(jnp.ones([bs, self._stoch], f32)),
+          stoch=maybe_squeeze(jnp.zeros([bs, self._stoch], f32)))
     if self._initial == 'zeros':
       return cast(state)
     elif self._initial == 'learned':
-      deter = self.get('initial', jnp.zeros, state['deter'][0].shape, f32)
-      state['deter'] = jnp.repeat(jnp.tanh(deter)[None], bs, 0)
+      deter = self.get('initial', jnp.zeros, self._deter, f32)
+      state['deter'] = maybe_squeeze(jnp.repeat(jnp.tanh(deter)[None], bs, 0))
       state['stoch'] = self.get_stoch(cast(state['deter']))
       return cast(state)
     else:
       raise NotImplementedError(self._initial)
 
-  def observe(self, embed, action, is_first, state=None):
-    swap = lambda x: x.transpose([1, 0] + list(range(2, len(x.shape))))
+  def observe(self, embed, action, is_first, state=None, batch_free=False):
+    if batch_free:
+      swap = lambda x: x
+    else:
+      swap = lambda x: x.transpose([1, 0] + list(range(2, len(x.shape))))
     if state is None:
-      state = self.initial(action.shape[0])
-    step = lambda prev, inputs: self.obs_step(prev[0], *inputs)
+      state = self.initial(action.shape[0], batch_free=batch_free)
+    step = lambda prev, inputs: self.obs_step(prev[0], *inputs, batch_free=batch_free)
     inputs = swap(action), swap(embed), swap(is_first)
     start = state, state
     post, prior = jaxutils.scan(step, inputs, start, self._unroll)
@@ -80,9 +87,13 @@ class RSSM(nj.Module):
       std = state['std'].astype(f32)
       return tfd.MultivariateNormalDiag(mean, std)
 
-  def obs_step(self, prev_state, prev_action, embed, is_first):
+  def obs_step(self, prev_state, prev_action, embed, is_first, batch_free=False):
     is_first = cast(is_first)
     prev_action = cast(prev_action)
+    if batch_free:
+      # Necessary for the einsum in self._mask to work.
+      is_first = is_first.reshape(1)
+
     if self._action_clip > 0.0:
       prev_action *= sg(self._action_clip / jnp.maximum(
           self._action_clip, jnp.abs(prev_action)))
@@ -90,7 +101,7 @@ class RSSM(nj.Module):
         lambda x: self._mask(x, 1.0 - is_first), (prev_state, prev_action))
     prev_state = jax.tree_util.tree_map(
         lambda x, y: x + self._mask(y, is_first),
-        prev_state, self.initial(len(is_first)))
+        prev_state, self.initial(len(is_first), batch_free=batch_free))
     prior = self.img_step(prev_state, prev_action)
     x = jnp.concatenate([prior['deter'], embed], -1)
     x = self.get('obs_out', Linear, **self._kw)(x)
