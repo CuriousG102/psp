@@ -79,8 +79,8 @@ class Agent(nj.Module):
     self.config.jax.jit and print('Tracing train function.')
     metrics = {}
     data = self.preprocess(data)
-    # vf = None
-    vf = self.task_behavior.ac.critics['extr'].net
+    vf = None
+    # vf = self.task_behavior.ac.critics['extr'].net
     state, wm_outs, mets = self.wm.train(data, state, vf=vf)
     metrics.update(mets)
     context = {**data, **wm_outs['post']}
@@ -158,18 +158,14 @@ class WorldModel(nj.Module):
     all_data.update(data)
     embed = self.encoder(all_data)
     prev_latent, prev_action = state
-    if vf is None:
-      prev_actions = jnp.concatenate([
-        prev_action[:, None], all_data['action'][:, :-1]], 1)
-    else:
-      prev_actions = jnp.concatenate([
-        prev_action[None], all_data['action'][:-1]], 0)
+    prev_actions = jnp.concatenate([
+      prev_action[None], all_data['action'][:-1]], 0)
     post, prior = self.rssm.observe(
       embed, prev_actions, all_data['is_first'], prev_latent,
-      batch_free=vf is not None)
+      batch_free=True)
     return vf(post).mean() if vf is not None else None, (embed, post, prior,)
 
-  def loss(self, data, state, vf=None):
+  def per_item_loss(self, data, state, vf=None):
     """
     World Model loss
 
@@ -185,9 +181,8 @@ class WorldModel(nj.Module):
     if vf is None:
       v_grad, (embed, post, prior) = self.get_embed_post_prior({}, data, state)
     else:
-      embed_post_prior = jax.vmap(jax.jacrev(
-          functools.partial(self.get_embed_post_prior, vf=vf), has_aux=True),
-          in_axes=[0, 0, 0], out_axes=0)
+      embed_post_prior = jax.jacrev(
+          functools.partial(self.get_embed_post_prior, vf=vf), has_aux=True)
 
       d_data = {}
       for k in self.encoder.cnn_shapes:
@@ -209,28 +204,50 @@ class WorldModel(nj.Module):
     losses['dyn'] = self.rssm.dyn_loss(post, prior, **self.config.dyn_loss)
     losses['rep'] = self.rssm.rep_loss(post, prior, **self.config.rep_loss)
     for key, dist in dists.items():
-      # TODO: Weight loss by vgrad here, if vgrad is populated.
       if v_grad is not None and key in self.encoder.cnn_shapes:
-        k_v_grad = v_grad[key]  # [B, L, L, H, W, C]
-        batch_length = k_v_grad.shape[1]
-        k_v_grad = k_v_grad[  # [B, L, H, W, C]
-             :, jnp.arange(batch_length), jnp.arange(batch_length), ...]
+        k_v_grad = v_grad[key]  # [L, L, H, W, C]
+        batch_length = k_v_grad.shape[0]
+        k_v_grad = k_v_grad[  # [L, H, W, C]
+            jnp.arange(batch_length), jnp.arange(batch_length), ...]
         pred = dist.mean()
         loss = ((k_v_grad * (pred - data[key].astype(jnp.float32))) ** 2).sum(
+          # (C, W, H)
           (-1, -2, -3)
         )
       else:
         loss = -dist.log_prob(data[key].astype(jnp.float32))
-      assert loss.shape == embed.shape[:2], (key, loss.shape)
+      assert loss.shape == embed.shape[:1], (key, loss.shape)
       losses[key] = loss
     scaled = {k: v * self.scales[k] for k, v in losses.items()}
     model_loss = sum(scaled.values())
-    out = {'embed':  embed, 'post': post, 'prior': prior}
+    out = {'embed': embed, 'post': post, 'prior': prior}
     out.update({f'{k}_loss': v for k, v in losses.items()})
-    last_latent = {k: v[:, -1] for k, v in post.items()}
-    last_action = data['action'][:, -1]
+    last_latent = {k: v[-1] for k, v in post.items()}
+    last_action = data['action'][-1]
     state = last_latent, last_action
-    metrics = self._metrics(data, dists, post, prior, losses, model_loss)
+    # TODO: Convert dists to tensors and return.
+    return (data, post, prior, losses, model_loss, state, out,
+            model_loss)
+
+  def loss(self, data, state, vf=None):
+    """
+    World Model loss
+
+    :param data:
+    :param state:
+    :param vf: vf. If passed in should be a function that takes an array
+      with last dimension representing posterior from world model and
+      outputs value. Will be used to take the derivative of value
+      function with regard to each state and weight loss terms of state
+      prediction according to their contribution.
+    :return:
+    """
+    per_item_loss = jax.vmap(
+        functools.partial(self.per_item_loss, vf=vf), in_axes=[0, 0])
+    (data, post, prior, losses, model_loss, state, out,
+     model_loss) = per_item_loss(data, state)
+
+    metrics = self._metrics(data, post, prior, losses, model_loss)
     return model_loss.mean(), (state, out, metrics)
 
   def imagine(self, policy, start, horizon):
@@ -271,7 +288,7 @@ class WorldModel(nj.Module):
       report[f'openl_{key}'] = jaxutils.video_grid(video)
     return report
 
-  def _metrics(self, data, dists, post, prior, losses, model_loss):
+  def _metrics(self, data, post, prior, losses, model_loss):
     entropy = lambda feat: self.rssm.get_dist(feat).entropy()
     metrics = {}
     metrics.update(jaxutils.tensorstats(entropy(prior), 'prior_ent'))
@@ -281,13 +298,15 @@ class WorldModel(nj.Module):
     metrics['model_loss_mean'] = model_loss.mean()
     metrics['model_loss_std'] = model_loss.std()
     metrics['reward_max_data'] = jnp.abs(data['reward']).max()
-    metrics['reward_max_pred'] = jnp.abs(dists['reward'].mean()).max()
-    if 'reward' in dists and not self.config.jax.debug_nans:
-      stats = jaxutils.balance_stats(dists['reward'], data['reward'], 0.1)
-      metrics.update({f'reward_{k}': v for k, v in stats.items()})
-    if 'cont' in dists and not self.config.jax.debug_nans:
-      stats = jaxutils.balance_stats(dists['cont'], data['cont'], 0.5)
-      metrics.update({f'cont_{k}': v for k, v in stats.items()})
+    # TODO: Re-enable dists stats. Requires passing dist parameters through
+    #       vectorized per-item-loss fn which is non-trivial.
+    # metrics['reward_max_pred'] = jnp.abs(dists['reward'].mean()).max()
+    # if 'reward' in dists and not self.config.jax.debug_nans:
+    #   stats = jaxutils.balance_stats(dists['reward'], data['reward'], 0.1)
+    #   metrics.update({f'reward_{k}': v for k, v in stats.items()})
+    # if 'cont' in dists and not self.config.jax.debug_nans:
+    #   stats = jaxutils.balance_stats(dists['cont'], data['cont'], 0.5)
+    #   metrics.update({f'cont_{k}': v for k, v in stats.items()})
     return metrics
 
 
