@@ -320,3 +320,6 @@ no_evil:
 no_kl_balance:
   loss_scales.dyn: 0.5
   loss_scales.rep: 0.5
+
+no_categorical:
+  rssm.classes: 0
