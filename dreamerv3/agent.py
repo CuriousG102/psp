@@ -79,9 +79,8 @@ class Agent(nj.Module):
     self.config.jax.jit and print('Tracing train function.')
     metrics = {}
     data = self.preprocess(data)
-    vf = None
-    # vf = self.task_behavior.ac.critics['extr'].net
-    state, wm_outs, mets = self.wm.train(data, state, vf=vf)
+    vf = self.task_behavior.ac.critics['extr'].net
+    state, wm_outs, mets = self.wm.train(data, state, vf)
     metrics.update(mets)
     context = {**data, **wm_outs['post']}
     start = tree_map(lambda x: x.reshape([-1] + list(x.shape[2:])), context)
@@ -97,7 +96,8 @@ class Agent(nj.Module):
     self.config.jax.jit and print('Tracing report function.')
     data = self.preprocess(data)
     report = {}
-    report.update(self.wm.report(data))
+    vf = self.task_behavior.ac.critics['extr'].net
+    report.update(self.wm.report(data, vf))
     mets = self.task_behavior.report(data)
     report.update({f'task_{k}': v for k, v in mets.items()})
     if self.expl_behavior is not self.task_behavior:
@@ -145,14 +145,14 @@ class WorldModel(nj.Module):
     prev_action = jnp.zeros((batch_size, *self.act_space.shape))
     return prev_latent, prev_action
 
-  def train(self, data, state, vf=None):
+  def train(self, data, state, vf):
     modules = [self.encoder, self.rssm, *self.heads.values()]
     mets, (state, outs, metrics) = self.opt(
-        modules, self.loss, data, state, vf=vf, has_aux=True)
+        modules, self.loss, data, state, vf, has_aux=True)
     metrics.update(mets)
     return state, outs, metrics
 
-  def get_embed_post_prior(self, d_data, data, state, vf=None):
+  def get_embed_post_prior(self, d_data, data, state):
     all_data = {}
     all_data.update(d_data)
     all_data.update(data)
@@ -163,9 +163,13 @@ class WorldModel(nj.Module):
     post, prior = self.rssm.observe(
       embed, prev_actions, all_data['is_first'], prev_latent,
       batch_free=True)
+    return post, (embed, prior)
+
+  def get_v_embed_post_prior(self, d_data, data, state, vf=None):
+    post, (embed, prior) = self.get_embed_post_prior(d_data, data, state)
     return vf(post).mean() if vf is not None else None, (embed, post, prior,)
 
-  def per_item_loss(self, data, state, vf=None):
+  def per_item_loss(self, data, state, vf):
     """
     World Model loss
 
@@ -178,21 +182,35 @@ class WorldModel(nj.Module):
       prediction according to their contribution.
     :return:
     """
-    if vf is None:
-      v_grad, (embed, post, prior) = self.get_embed_post_prior({}, data, state)
+    embed = post = prior = image_v_grad = latent_v_grad = None
+    if (not self.config.image_v_grad
+        and not self.config.dyn_v_grad
+        and not self.config.rep_v_grad):
+      _, (embed, post, prior) = self.get_v_embed_post_prior({}, data, state)
     else:
-      embed_post_prior = jax.jacrev(
-          functools.partial(self.get_embed_post_prior, vf=vf), has_aux=True)
+      if self.config.image_v_grad:
+        embed_post_prior = jax.jacrev(
+            functools.partial(self.get_v_embed_post_prior, vf=vf), has_aux=True)
 
-      d_data = {}
-      for k in self.encoder.cnn_shapes:
-        if k in data:
-          d_data[k] = data[k]
-          del data[k]
+        d_data = {}
+        for k in self.encoder.cnn_shapes:
+          if k in data:
+            d_data[k] = data[k]
+            del data[k]
 
-      v_grad, (embed, post, prior) = embed_post_prior(d_data, data, state)
+        image_v_grad, (embed, post, prior) = embed_post_prior(d_data, data, state)
 
-      data.update(d_data)
+        data.update(d_data)
+      if self.config.dyn_v_grad or self.config.rep_v_grad:
+        if not self.config.image_v_grad:
+          post, (embed, prior) = self.get_embed_post_prior({}, data, state)
+        v_mean = jax.jacrev(lambda post: vf(post).mean())
+        latent_v_grad = v_mean(post)
+        batch_length = latent_v_grad['deter'].shape[0]
+        # TODO: Option to aggregate future gradients on this value.
+        latent_v_grad = tree_map(
+            lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
+            latent_v_grad)
 
     dists = {}
     feats = {**post, 'embed': embed}
@@ -201,11 +219,15 @@ class WorldModel(nj.Module):
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
     losses = {}
-    losses['dyn'] = self.rssm.dyn_loss(post, prior, **self.config.dyn_loss)
-    losses['rep'] = self.rssm.rep_loss(post, prior, **self.config.rep_loss)
+    losses['dyn'] = self.rssm.dyn_loss(
+        post, prior, **self.config.dyn_loss,
+        weight=latent_v_grad if self.config.dyn_v_grad else None)
+    losses['rep'] = self.rssm.rep_loss(
+      post, prior, **self.config.rep_loss,
+      weight=latent_v_grad if self.config.rep_v_grad else None)
     for key, dist in dists.items():
-      if v_grad is not None and key in self.encoder.cnn_shapes:
-        k_v_grad = v_grad[key]  # [L, L, H, W, C]
+      if image_v_grad is not None and key in self.encoder.cnn_shapes:
+        k_v_grad = image_v_grad[key]  # [L, L, H, W, C]
         batch_length = k_v_grad.shape[0]
         k_v_grad = k_v_grad[  # [L, H, W, C]
             jnp.arange(batch_length), jnp.arange(batch_length), ...]
@@ -229,7 +251,7 @@ class WorldModel(nj.Module):
     return (data, post, prior, losses, model_loss, state, out,
             model_loss)
 
-  def loss(self, data, state, vf=None):
+  def loss(self, data, state, vf):
     """
     World Model loss
 
@@ -269,10 +291,10 @@ class WorldModel(nj.Module):
     traj['weight'] = jnp.cumprod(discount * traj['cont'], 0) / discount
     return traj
 
-  def report(self, data):
+  def report(self, data, vf):
     state = self.initial(len(data['is_first']))
     report = {}
-    report.update(self.loss(data, state)[-1][-1])
+    report.update(self.loss(data, state, vf)[-1][-1])
     context, _ = self.rssm.observe(
         self.encoder(data)[:6, :5], data['action'][:6, :5],
         data['is_first'][:6, :5])

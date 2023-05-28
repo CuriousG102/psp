@@ -170,9 +170,22 @@ class RSSM(nj.Module):
   def _mask(self, value, mask):
     return jnp.einsum('b...,b->b...', value, mask.astype(value.dtype))
 
-  def dyn_loss(self, post, prior, impl='kl', free=1.0):
+  def dyn_loss(self, post, prior, impl='kl', free=1.0, weight=None):
     if impl == 'kl':
-      loss = self.get_dist(sg(post)).kl_divergence(self.get_dist(prior))
+      post_dist = self.get_dist(sg(post))
+      prior_dist = self.get_dist(prior)
+      if weight is None:
+        loss = post_dist.kl_divergence(prior_dist)
+      else:
+        # TODO: Make this less horribly hacky.
+        assert self._classes
+        post_logits = post_dist.distribution.logits
+        prior_logits = prior_dist.distribution.logits
+        loss = jnp.sum(
+          jnp.abs(weight['logit']) * jax.nn.softmax(post_logits) * (
+              jax.nn.log_softmax(post_logits)
+              - jax.nn.log_softmax(prior_logits)),
+          axis=[-1, -2])
     elif impl == 'logprob':
       loss = -self.get_dist(prior).log_prob(sg(post['stoch']))
     else:
@@ -181,9 +194,22 @@ class RSSM(nj.Module):
       loss = jnp.maximum(loss, free)
     return loss
 
-  def rep_loss(self, post, prior, impl='kl', free=1.0):
+  def rep_loss(self, post, prior, impl='kl', free=1.0, weight=None):
     if impl == 'kl':
-      loss = self.get_dist(post).kl_divergence(self.get_dist(sg(prior)))
+      post_dist = self.get_dist(sg(post))
+      prior_dist = self.get_dist(prior)
+      if weight is None:
+        loss = post_dist.kl_divergence(prior_dist)
+      else:
+        # TODO: Make this less horribly hacky.
+        assert self._classes
+        post_logits = post_dist.distribution.logits
+        prior_logits = prior_dist.distribution.logits
+        loss = jnp.sum(
+          jnp.abs(weight['logit']) * jax.nn.softmax(post_logits) * (
+              jax.nn.log_softmax(post_logits)
+              - jax.nn.log_softmax(prior_logits)),
+          axis=[-1, -2])
     elif impl == 'uniform':
       uniform = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), prior)
       loss = self.get_dist(post).kl_divergence(self.get_dist(uniform))
