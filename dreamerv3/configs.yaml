@@ -79,6 +79,7 @@ defaults:
   cont_head: {layers: 5, units: 1024, act: silu, norm: layer, dist: binary, outscale: 1.0, outnorm: False, inputs: [deter, stoch], winit: normal, fan: avg}
   loss_scales: {image: 1.0, vector: 1.0, reward: 1.0, cont: 1.0, dyn: 0.5, rep: 0.1, actor: 1.0, critic: 1.0, slowreg: 1.0}
   dyn_v_grad: false
+  latent_v_grad_normed: false
   rep_v_grad: false
   image_v_grad: false
   dyn_loss: {impl: kl, free: 1.0}
@@ -329,6 +330,9 @@ no_categorical:
 
 dynamic_value_gradient:
   dyn_v_grad: true
+
+latent_value_gradient_normed:
+  latent_v_grad_normed: true
 
 rep_value_gradient:
   rep_v_grad: true
