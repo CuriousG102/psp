@@ -199,6 +199,10 @@ class WorldModel(nj.Module):
             del data[k]
 
         image_v_grad, (embed, post, prior) = embed_post_prior(d_data, data, state)
+        batch_length = image_v_grad['image'].shape[0]
+        image_v_grad = tree_map(
+            lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
+            image_v_grad)
 
         data.update(d_data)
       if self.config.dyn_v_grad or self.config.rep_v_grad:
@@ -230,9 +234,6 @@ class WorldModel(nj.Module):
     for key, dist in dists.items():
       if image_v_grad is not None and key in self.encoder.cnn_shapes:
         k_v_grad = image_v_grad[key]  # [L, L, H, W, C]
-        batch_length = k_v_grad.shape[0]
-        k_v_grad = k_v_grad[  # [L, H, W, C]
-            jnp.arange(batch_length), jnp.arange(batch_length), ...]
         pred = dist.mean()
         loss = ((k_v_grad * (pred - data[key].astype(jnp.float32))) ** 2).sum(
           # (C, W, H)
