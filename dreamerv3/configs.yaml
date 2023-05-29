@@ -81,6 +81,8 @@ defaults:
   dyn_v_grad: false
   latent_v_grad_normed: false
   latent_v_grad_norm_keep_magnitude: false
+  image_v_grad_normed: false
+  image_v_grad_norm_keep_magnitude: false
   rep_v_grad: false
   image_v_grad: false
   dyn_loss: {impl: kl, free: 1.0}
@@ -343,3 +345,9 @@ rep_value_gradient:
 
 image_value_gradient:
   image_v_grad: true
+
+image_value_gradient_normed:
+  image_v_grad_normed: true
+
+image_value_gradient_norm_keep_magnitude:
+  image_v_grad_norm_keep_magnitude: true

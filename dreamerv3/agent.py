@@ -235,11 +235,24 @@ class WorldModel(nj.Module):
         keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude)
     for key, dist in dists.items():
       if image_v_grad is not None and key in self.encoder.cnn_shapes:
-        k_v_grad = image_v_grad[key]  # [L, L, H, W, C]
+        weights = jnp.abs(image_v_grad[key]) + 1e-6  # [L, H, W, C]
+        if self.config.image_v_grad_normed:
+          weights /= jnp.sum(weights, axis=-1, keepdims=True)
+
         pred = dist.mean()
-        loss = ((k_v_grad * (pred - data[key].astype(jnp.float32))) ** 2).sum(
-          # (C, W, H)
-          (-1, -2, -3)
+        loss = (pred - data[key].astype(jnp.float32)) ** 2
+
+        original_loss = loss
+        loss = weights * loss
+        if self.config.image_v_grad_norm_keep_magnitude:
+          loss *= (
+              jnp.sum(original_loss, axis=-1, keepdims=True)
+              / jnp.sum(loss, axis=-1, keepdims=True)
+          )
+
+        loss = loss.sum(
+            # (C, W, H)
+            (-1, -2, -3)
         )
       else:
         loss = -dist.log_prob(data[key].astype(jnp.float32))

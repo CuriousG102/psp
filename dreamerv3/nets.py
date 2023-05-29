@@ -180,9 +180,12 @@ class RSSM(nj.Module):
         loss = post_dist.kl_divergence(prior_dist)
       else:
         # TODO: Make this less horribly hacky.
+        # TODO: De-duplicate this code across dyn_loss & rep_loss.
         assert self._classes
         post_logits = post_dist.distribution.logits
         prior_logits = prior_dist.distribution.logits
+        # TODO: Shared utility for norming & epsilon so this can be used
+        #       for image and latent losses.
         logit_weights = jnp.abs(weight['logit']) + 1e-6
         if normed:
           # TODO: Log how often logit_weights is all zeros.
@@ -191,9 +194,11 @@ class RSSM(nj.Module):
         loss = jax.nn.softmax(post_logits) * (
             jax.nn.log_softmax(post_logits)
             - jax.nn.log_softmax(prior_logits))
+
+        # TODO: Shared utility for loss magnitude preservation
+        #       so this can be used for image and latent losses.
         original_loss = loss
         loss = logit_weights * loss
-
         if keep_magnitude:
           loss *= (
               jnp.sum(original_loss, axis=-1, keepdims=True)
