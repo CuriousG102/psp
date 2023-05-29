@@ -171,7 +171,8 @@ class RSSM(nj.Module):
     return jnp.einsum('b...,b->b...', value, mask.astype(value.dtype))
 
   def dyn_loss(
-      self, post, prior, impl='kl', free=1.0, weight=None, normed=False):
+      self, post, prior, impl='kl', free=1.0, weight=None, normed=False,
+      keep_magnitude=False):
     if impl == 'kl':
       post_dist = self.get_dist(sg(post))
       prior_dist = self.get_dist(prior)
@@ -186,11 +187,19 @@ class RSSM(nj.Module):
         if normed:
           # TODO: Log how often logit_weights is all zeros.
           logit_weights /= jnp.sum(logit_weights, axis=-1, keepdims=True)
-        loss = jnp.sum(
-            logit_weights * jax.nn.softmax(post_logits) * (
-                jax.nn.log_softmax(post_logits)
-                - jax.nn.log_softmax(prior_logits)),
-            axis=[-1, -2])
+
+        loss = jax.nn.softmax(post_logits) * (
+            jax.nn.log_softmax(post_logits)
+            - jax.nn.log_softmax(prior_logits))
+        original_loss = loss
+        loss = logit_weights * loss
+
+        if keep_magnitude:
+          loss *= (
+              jnp.sum(original_loss, axis=-1, keepdims=True)
+              / jnp.sum(loss, axis=-1, keepdims=True))
+            
+        loss = jnp.sum(loss, axis=[-1, -2])
     elif impl == 'logprob':
       loss = -self.get_dist(prior).log_prob(sg(post['stoch']))
     else:
@@ -200,7 +209,8 @@ class RSSM(nj.Module):
     return loss
 
   def rep_loss(
-      self, post, prior, impl='kl', free=1.0, weight=None, normed=False):
+      self, post, prior, impl='kl', free=1.0, weight=None, normed=False,
+      keep_magnitude=False):
     if impl == 'kl':
       post_dist = self.get_dist(sg(post))
       prior_dist = self.get_dist(prior)
@@ -211,14 +221,23 @@ class RSSM(nj.Module):
         assert self._classes
         post_logits = post_dist.distribution.logits
         prior_logits = prior_dist.distribution.logits
-        logit_weights = jnp.abs(weight['logit'])
+        logit_weights = jnp.abs(weight['logit']) + 1e-6
         if normed:
+          # TODO: Log how often logit_weights is all zeros.
           logit_weights /= jnp.sum(logit_weights, axis=-1, keepdims=True)
-        loss = jnp.sum(
-            logit_weights * jax.nn.softmax(post_logits) * (
-                    jax.nn.log_softmax(post_logits)
-                    - jax.nn.log_softmax(prior_logits)),
-            axis=[-1, -2])
+
+        loss = jax.nn.softmax(post_logits) * (
+                jax.nn.log_softmax(post_logits)
+                - jax.nn.log_softmax(prior_logits))
+        original_loss = loss
+        loss = logit_weights * loss
+
+        if keep_magnitude:
+          loss *= (
+              jnp.sum(original_loss, axis=-1, keepdims=True)
+              / jnp.sum(original_loss, axis=-1, keepdims=True))
+
+        loss = jnp.sum(loss, axis=[-1, -2])
     elif impl == 'uniform':
       uniform = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), prior)
       loss = self.get_dist(post).kl_divergence(self.get_dist(uniform))

@@ -80,6 +80,7 @@ defaults:
   loss_scales: {image: 1.0, vector: 1.0, reward: 1.0, cont: 1.0, dyn: 0.5, rep: 0.1, actor: 1.0, critic: 1.0, slowreg: 1.0}
   dyn_v_grad: false
   latent_v_grad_normed: false
+  latent_v_grad_norm_keep_magnitude: false
   rep_v_grad: false
   image_v_grad: false
   dyn_loss: {impl: kl, free: 1.0}
@@ -333,6 +334,9 @@ dynamic_value_gradient:
 
 latent_value_gradient_normed:
   latent_v_grad_normed: true
+
+latent_value_gradient_norm_keep_magnitude:
+  latent_v_grad_norm_keep_magnitude: false
 
 rep_value_gradient:
   rep_v_grad: true
