@@ -79,7 +79,11 @@ class Agent(nj.Module):
     self.config.jax.jit and print('Tracing train function.')
     metrics = {}
     data = self.preprocess(data)
-    vf = self.task_behavior.ac.critics['extr'].net
+    gradient_weighting_net = {
+      'value_function': self.task_behavior.ac.critics['extr'].net,
+      'reward_function': self.wm.heads['reward']
+    }
+    vf = gradient_weighting_net[self.config.gradient_weighting_net]
     state, wm_outs, mets = self.wm.train(data, state, vf)
     metrics.update(mets)
     context = {**data, **wm_outs['post']}

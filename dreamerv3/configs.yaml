@@ -78,6 +78,7 @@ defaults:
   reward_head: {layers: 5, units: 1024, act: silu, norm: layer, dist: symlog_disc, outscale: 0.0, outnorm: False, inputs: [deter, stoch], winit: normal, fan: avg, bins: 255}
   cont_head: {layers: 5, units: 1024, act: silu, norm: layer, dist: binary, outscale: 1.0, outnorm: False, inputs: [deter, stoch], winit: normal, fan: avg}
   loss_scales: {image: 1.0, vector: 1.0, reward: 1.0, cont: 1.0, dyn: 0.5, rep: 0.1, actor: 1.0, critic: 1.0, slowreg: 1.0}
+  gradient_weighting_net: 'value_function'
   dyn_v_grad: false
   latent_v_grad_normed: false
   latent_v_grad_norm_keep_magnitude: false
@@ -360,3 +361,6 @@ image_value_gradient_normed:
 
 image_value_gradient_norm_keep_magnitude:
   image_v_grad_norm_keep_magnitude: true
+
+reward_head_gradient_weighting:
+  gradient_weighting_net: 'reward_function'
