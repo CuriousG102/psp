@@ -260,6 +260,15 @@ multicpu:
   batch_size: 12
   batch_length: 10
 
+cpu_full:
+  jax: {platform: cpu}
+
+half_batch:
+  batch_size: 8
+
+half_batch_length:
+  batch_length: 32
+
 debug:
 
   jax: {jit: True, prealloc: False, debug: True, platform: cpu}
