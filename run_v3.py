@@ -33,7 +33,7 @@ def main(argv=None):
     ])
 
     env = color_dmc.DMC(
-        'cheetah_run',
+        config.task,
         repeat=config.env.dmc.repeat,
         size=config.env.dmc.size,
         camera=config.env.dmc.camera,
