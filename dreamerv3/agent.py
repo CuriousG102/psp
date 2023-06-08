@@ -207,6 +207,7 @@ class WorldModel(nj.Module):
         image_v_grad = tree_map(
             lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
             image_v_grad)
+        image_v_grad = sg(image_v_grad)
 
         data.update(d_data)
       if self.config.dyn_v_grad or self.config.rep_v_grad:
@@ -219,6 +220,7 @@ class WorldModel(nj.Module):
         latent_v_grad = tree_map(
             lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
             latent_v_grad)
+        latent_v_grad = sg(latent_v_grad)
 
     dists = {}
     feats = {**post, 'embed': embed}
