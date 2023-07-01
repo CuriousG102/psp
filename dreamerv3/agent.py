@@ -272,8 +272,12 @@ class WorldModel(nj.Module):
     last_action = data['action'][-1]
     state = last_latent, last_action
     # TODO: Convert dists to tensors and return.
-    return (data, post, prior, losses, model_loss, state, out,
-            model_loss)
+
+    if self.config.dyn_v_grad or self.config.rep_v_grad:
+      return (data, post, prior, losses, model_loss, state, out,
+              latent_v_grad['stoch'])
+    else:
+      return (data, post, prior, losses, model_loss, state, out,)
 
   def loss(self, data, state, vf):
     """
@@ -290,10 +294,15 @@ class WorldModel(nj.Module):
     """
     per_item_loss = jax.vmap(
         functools.partial(self.per_item_loss, vf=vf), in_axes=[0, 0])
-    (data, post, prior, losses, model_loss, state, out,
-     model_loss) = per_item_loss(data, state)
+    if self.config.dyn_v_grad or self.config.rep_v_grad:
+      (data, post, prior, losses, model_loss, state, out,
+       latent_weight) = per_item_loss(
+          data, state)
+    else:
+      (data, post, prior, losses, model_loss, state, out,) = per_item_loss(
+          data, state)
 
-    metrics = self._metrics(data, post, prior, losses, model_loss)
+    metrics = self._metrics(data, post, prior, losses, model_loss, latent_weight)
     return model_loss.mean(), (state, out, metrics)
 
   def imagine(self, policy, start, horizon):
@@ -334,7 +343,7 @@ class WorldModel(nj.Module):
       report[f'openl_{key}'] = jaxutils.video_grid(video)
     return report
 
-  def _metrics(self, data, post, prior, losses, model_loss):
+  def _metrics(self, data, post, prior, losses, model_loss, latent_weight):
     entropy = lambda feat: self.rssm.get_dist(feat).entropy()
     metrics = {}
     metrics.update(jaxutils.tensorstats(entropy(prior), 'prior_ent'))
@@ -344,6 +353,7 @@ class WorldModel(nj.Module):
     metrics['model_loss_mean'] = model_loss.mean()
     metrics['model_loss_std'] = model_loss.std()
     metrics['reward_max_data'] = jnp.abs(data['reward']).max()
+    metrics.update(jaxutils.tensorstats(latent_weight, 'latent_weight'))
     # TODO: Re-enable dists stats. Requires passing dist parameters through
     #       vectorized per-item-loss fn which is non-trivial.
     # metrics['reward_max_pred'] = jnp.abs(dists['reward'].mean()).max()

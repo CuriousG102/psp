@@ -357,7 +357,7 @@ latent_value_gradient_normed:
   latent_v_grad_normed: true
 
 latent_value_gradient_norm_keep_magnitude:
-  latent_v_grad_norm_keep_magnitude: false
+  latent_v_grad_norm_keep_magnitude: true
 
 rep_value_gradient:
   rep_v_grad: true

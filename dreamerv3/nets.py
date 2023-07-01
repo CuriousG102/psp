@@ -186,7 +186,7 @@ class RSSM(nj.Module):
         prior_logits = prior_dist.distribution.logits
         # TODO: Shared utility for norming & epsilon so this can be used
         #       for image and latent losses.
-        logit_weights = jnp.abs(weight['logit']) + 1e-6
+        logit_weights = jnp.abs(weight['stoch']) + 1e-6
         if normed:
           # TODO: Log how often logit_weights is all zeros.
           logit_weights /= jnp.sum(logit_weights, axis=-1, keepdims=True)
@@ -226,7 +226,7 @@ class RSSM(nj.Module):
         assert self._classes
         post_logits = post_dist.distribution.logits
         prior_logits = prior_dist.distribution.logits
-        logit_weights = jnp.abs(weight['logit']) + 1e-6
+        logit_weights = jnp.abs(weight['stoch']) + 1e-6
         if normed:
           # TODO: Log how often logit_weights is all zeros.
           logit_weights /= jnp.sum(logit_weights, axis=-1, keepdims=True)
