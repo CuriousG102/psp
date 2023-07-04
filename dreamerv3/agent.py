@@ -233,12 +233,14 @@ class WorldModel(nj.Module):
         post, prior, **self.config.dyn_loss,
         weight=latent_v_grad if self.config.dyn_v_grad else None,
         normed=self.config.latent_v_grad_normed,
-        keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude)
+        keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude,
+        percentile_clip=self.config.latent_v_grad_percentile_clip)
     losses['rep'] = self.rssm.rep_loss(
         post, prior, **self.config.rep_loss,
         weight=latent_v_grad if self.config.rep_v_grad else None,
         normed=self.config.latent_v_grad_normed,
-        keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude)
+        keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude,
+        percentile_clip=self.config.latent_v_grad_percentile_clip)
     for key, dist in dists.items():
       if image_v_grad is not None and key in self.encoder.cnn_shapes:
         weights = jnp.abs(image_v_grad[key]) + 1e-6  # [L, H, W, C]

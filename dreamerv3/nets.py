@@ -172,7 +172,7 @@ class RSSM(nj.Module):
 
   def dyn_loss(
       self, post, prior, impl='kl', free=1.0, weight=None, normed=False,
-      keep_magnitude=False):
+      keep_magnitude=False, percentile_clip=False):
     if impl == 'kl':
       post_dist = self.get_dist(sg(post))
       prior_dist = self.get_dist(prior)
@@ -181,7 +181,8 @@ class RSSM(nj.Module):
       else:
         loss = self._weighted_kl_divergence(
             post_dist, prior_dist, weight,
-            normed=normed, keep_magnitude=keep_magnitude)
+            normed=normed, keep_magnitude=keep_magnitude,
+            percentile_clip=percentile_clip)
     elif impl == 'logprob':
       loss = -self.get_dist(prior).log_prob(sg(post['stoch']))
     else:
@@ -192,7 +193,7 @@ class RSSM(nj.Module):
 
   def rep_loss(
       self, post, prior, impl='kl', free=1.0, weight=None, normed=False,
-      keep_magnitude=False):
+      keep_magnitude=False, percentile_clip=False):
     if impl == 'kl':
       post_dist = self.get_dist(sg(post))
       prior_dist = self.get_dist(prior)
@@ -202,7 +203,8 @@ class RSSM(nj.Module):
         # TODO: Make this less horribly hacky.
         loss = self._weighted_kl_divergence(
             post_dist, prior_dist, weight,
-            normed=normed, keep_magnitude=keep_magnitude)
+            normed=normed, keep_magnitude=keep_magnitude,
+            percentile_clip=percentile_clip)
     elif impl == 'uniform':
       uniform = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), prior)
       loss = self.get_dist(post).kl_divergence(self.get_dist(uniform))
@@ -217,7 +219,8 @@ class RSSM(nj.Module):
     return loss
 
   def _weighted_kl_divergence(
-          self, post_dist, prior_dist, weight, *, normed, keep_magnitude):
+          self, post_dist, prior_dist, weight,
+          *, normed, keep_magnitude, percentile_clip):
     assert self._classes
     post_logits = post_dist.distribution.logits
     prior_logits = prior_dist.distribution.logits
@@ -225,6 +228,10 @@ class RSSM(nj.Module):
     # TODO: Shared utility for norming & magnitude presevation so this
     #       can be shared for image and latent losses.
     logit_weights = jnp.abs(weight['stoch']) + 1e-6
+    if percentile_clip:
+      p95 = jnp.percentile(logit_weights, 95)
+      logit_weights = jnp.where(logit_weights > p95, p95, logit_weights)
+
     if normed:
       # TODO: Log how often logit_weights is all zeros.
       logit_weights /= jnp.sum(logit_weights, axis=-1, keepdims=True)
