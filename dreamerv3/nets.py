@@ -179,32 +179,9 @@ class RSSM(nj.Module):
       if weight is None:
         loss = post_dist.kl_divergence(prior_dist)
       else:
-        # TODO: Make this less horribly hacky.
-        # TODO: De-duplicate this code across dyn_loss & rep_loss.
-        assert self._classes
-        post_logits = post_dist.distribution.logits
-        prior_logits = prior_dist.distribution.logits
-        # TODO: Shared utility for norming & epsilon so this can be used
-        #       for image and latent losses.
-        logit_weights = jnp.abs(weight['stoch']) + 1e-6
-        if normed:
-          # TODO: Log how often logit_weights is all zeros.
-          logit_weights /= jnp.sum(logit_weights, axis=-1, keepdims=True)
-
-        loss = jax.nn.softmax(post_logits) * (
-            jax.nn.log_softmax(post_logits)
-            - jax.nn.log_softmax(prior_logits))
-
-        # TODO: Shared utility for loss magnitude preservation
-        #       so this can be used for image and latent losses.
-        original_loss = loss
-        loss = logit_weights * loss
-        if keep_magnitude:
-          loss *= (
-              jnp.sum(original_loss, axis=-1, keepdims=True)
-              / jnp.sum(loss, axis=-1, keepdims=True))
-            
-        loss = jnp.sum(loss, axis=[-1, -2])
+        loss = self._weighted_kl_divergence(
+            post_dist, prior_dist, weight,
+            normed=normed, keep_magnitude=keep_magnitude)
     elif impl == 'logprob':
       loss = -self.get_dist(prior).log_prob(sg(post['stoch']))
     else:
@@ -223,26 +200,9 @@ class RSSM(nj.Module):
         loss = post_dist.kl_divergence(prior_dist)
       else:
         # TODO: Make this less horribly hacky.
-        assert self._classes
-        post_logits = post_dist.distribution.logits
-        prior_logits = prior_dist.distribution.logits
-        logit_weights = jnp.abs(weight['stoch']) + 1e-6
-        if normed:
-          # TODO: Log how often logit_weights is all zeros.
-          logit_weights /= jnp.sum(logit_weights, axis=-1, keepdims=True)
-
-        loss = jax.nn.softmax(post_logits) * (
-                jax.nn.log_softmax(post_logits)
-                - jax.nn.log_softmax(prior_logits))
-        original_loss = loss
-        loss = logit_weights * loss
-
-        if keep_magnitude:
-          loss *= (
-              jnp.sum(original_loss, axis=-1, keepdims=True)
-              / jnp.sum(original_loss, axis=-1, keepdims=True))
-
-        loss = jnp.sum(loss, axis=[-1, -2])
+        loss = self._weighted_kl_divergence(
+            post_dist, prior_dist, weight,
+            normed=normed, keep_magnitude=keep_magnitude)
     elif impl == 'uniform':
       uniform = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), prior)
       loss = self.get_dist(post).kl_divergence(self.get_dist(uniform))
@@ -254,6 +214,35 @@ class RSSM(nj.Module):
       raise NotImplementedError(impl)
     if free:
       loss = jnp.maximum(loss, free)
+    return loss
+
+  def _weighted_kl_divergence(
+          self, post_dist, prior_dist, weight, *, normed, keep_magnitude):
+    assert self._classes
+    post_logits = post_dist.distribution.logits
+    prior_logits = prior_dist.distribution.logits
+
+    # TODO: Shared utility for norming & magnitude presevation so this
+    #       can be shared for image and latent losses.
+    logit_weights = jnp.abs(weight['stoch']) + 1e-6
+    if normed:
+      # TODO: Log how often logit_weights is all zeros.
+      logit_weights /= jnp.sum(logit_weights, axis=-1, keepdims=True)
+
+    loss = jax.nn.softmax(post_logits) * (
+            jax.nn.log_softmax(post_logits)
+            - jax.nn.log_softmax(prior_logits)
+    )
+
+    original_loss = loss
+    loss = logit_weights * loss
+    if keep_magnitude:
+      loss *= (
+              jnp.sum(original_loss, axis=-1, keepdims=True)
+              / jnp.sum(loss, axis=-1, keepdims=True)
+      )
+
+    loss = jnp.sum(loss, axis=[-1, -2])
     return loss
 
 
