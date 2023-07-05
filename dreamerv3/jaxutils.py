@@ -426,7 +426,7 @@ class Optimizer(nj.Module):
         keep.astype(jnp.float32) * self.grad_scale.read() +
         incr.astype(jnp.float32) * self.grad_scale.read() * 2 +
         decr.astype(jnp.float32) * self.grad_scale.read() / 2,
-        1e-4, 1e4))
+        1e-6, 1e4))
     return finite
 
 
