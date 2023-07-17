@@ -136,6 +136,9 @@ class Dreamer(tools.Module):
         self._strategy.run(self._train, args=(data, log_images))
 
     def _train(self, data, log_images):
+        mask = None
+        true_mask = None
+        true_image = None
         if self._c.use_unet or self._c.use_color_mask:
             data = data.copy()
         if not self._c.mask_hardcode:
@@ -433,19 +436,20 @@ class Dreamer(tools.Module):
         prior = self._dynamics.imagine(data['action'][:6, 5:], init)
         openl = self._decode(self._dynamics.get_feat(prior)).mode()
         model = tf.concat([recon[:, :5] + 0.5, openl + 0.5], 1)
-        green = tf.ones(mask.shape[:-1], dtype=tf.float16)
-        green *= tf.cast(tf.squeeze(tf.cast(mask, tf.bool)) & ~tf.squeeze(tf.cast(true_mask, tf.bool)), tf.float16)
-        red = tf.ones(mask.shape[:-1], dtype=tf.float16)
-        red *= tf.cast(~tf.squeeze(tf.cast(mask, tf.bool)) & tf.squeeze(tf.cast(true_mask, tf.bool)), tf.float16)
-        diff = tf.concat(
-            [
-                tf.nn.conv2d(red[..., tf.newaxis], tf.ones((5, 5, 1, 1,), dtype=red.dtype), 1, 'SAME'),
-                tf.nn.conv2d(green[..., tf.newaxis], tf.ones((5, 5, 1, 1,), dtype=green.dtype), 1, 'SAME'),
-                tf.zeros_like(red[..., tf.newaxis])
-            ], axis=-1)
-        mask = tf.cast(mask, tf.float16)
-        mask = tf.repeat(mask, 3, -1)
-        diff = tf.where(tf.math.reduce_sum(diff, axis=-1, keepdims=True) > 0, diff, mask)
+        if mask is not None:
+            green = tf.ones(mask.shape[:-1], dtype=tf.float16)
+            green *= tf.cast(tf.squeeze(tf.cast(mask, tf.bool)) & ~tf.squeeze(tf.cast(true_mask, tf.bool)), tf.float16)
+            red = tf.ones(mask.shape[:-1], dtype=tf.float16)
+            red *= tf.cast(~tf.squeeze(tf.cast(mask, tf.bool)) & tf.squeeze(tf.cast(true_mask, tf.bool)), tf.float16)
+            diff = tf.concat(
+                [
+                    tf.nn.conv2d(red[..., tf.newaxis], tf.ones((5, 5, 1, 1,), dtype=red.dtype), 1, 'SAME'),
+                    tf.nn.conv2d(green[..., tf.newaxis], tf.ones((5, 5, 1, 1,), dtype=green.dtype), 1, 'SAME'),
+                    tf.zeros_like(red[..., tf.newaxis])
+                ], axis=-1)
+            mask = tf.cast(mask, tf.float16)
+            mask = tf.repeat(mask, 3, -1)
+            diff = tf.where(tf.math.reduce_sum(diff, axis=-1, keepdims=True) > 0, diff, mask)
 
         reward_pred = reward_pred.mode()
         reward_red = tf.constant([1, 0, 0], dtype=tf.float16)[
@@ -465,20 +469,21 @@ class Dreamer(tools.Module):
             )
             reward_color = reward_color[:, :, tf.newaxis, tf.newaxis, :]
             reward_color = tf.repeat(reward_color, 16, axis=2)
-            reward_color = tf.repeat(reward_color, data['true_image'].shape[3], axis=3)
+            reward_color = tf.repeat(
+                reward_color,
+                data['true_image' if 'true_mage' in data else 'image'].shape[3],
+                axis=3)
             return reward_color
-
-        normalized_reward_pred = normalize_and_create_reward_video(
-            reward_pred)
-        normalized_reward_actual = normalize_and_create_reward_video(
-            reward_actual)
-
 
         if mask is not None:
             truth = data['true_image'][:6] + 0.5
             masked_truth = data['image'][:6] + 0.5
             mask = mask[:6]
             diff = diff[:6]
+            normalized_reward_pred = normalize_and_create_reward_video(
+                reward_pred)
+            normalized_reward_actual = normalize_and_create_reward_video(
+                reward_actual)
             normalized_reward_pred = normalized_reward_pred[:6]
             normalized_reward_actual = normalized_reward_actual[:6]
             error = (model - masked_truth + 1) / 2

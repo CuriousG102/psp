@@ -284,7 +284,7 @@ class WorldModel(nj.Module):
     if self.config.dyn_v_grad or self.config.rep_v_grad:
       gradients_dict['latent_weight'] = latent_v_grad['stoch']
     if self.config.image_v_grad:
-      gradients_dict['image_weight'] = image_v_grad
+      gradients_dict['image_weight'] = image_v_grad['image']
     return (data, post, prior, losses, model_loss, state, out,
             gradients_dict)
 

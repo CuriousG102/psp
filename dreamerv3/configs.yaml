@@ -24,7 +24,7 @@ defaults:
 
   run:
     script: train
-    steps: 1e10
+    steps: 1e6
     expl_until: 0
     log_every: 300
     save_every: 900
@@ -81,6 +81,7 @@ defaults:
   gradient_weighting_net: 'value_function'
   image_v_grad_normed: false
   image_v_grad_norm_keep_magnitude: false
+  image_v_grad_percentile_clip: false
   latent_v_grad_normed: false
   latent_v_grad_norm_keep_magnitude: false
   latent_v_grad_percentile_clip: false
