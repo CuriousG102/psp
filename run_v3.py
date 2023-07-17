@@ -12,7 +12,6 @@ def main(argv=None):
 
     parsed, other = embodied.Flags(configs=['defaults']).parse_known(argv)
     config = embodied.Config(dreamerv3.configs['defaults'])
-    config = config.update(dreamerv3.configs['medium'])
     config = config.update(dreamerv3.configs['dmc_vision'])
     for name in parsed.configs:
         config = config.update(dreamerv3.configs[name])

@@ -19,6 +19,7 @@ EVIL_CHOICE_CONVENIENCE_MAPPING = {
     'reward': EvilEnum.EVIL_REWARD,
     'action': EvilEnum.EVIL_ACTION,
     'sequence': EvilEnum.EVIL_SEQUENCE,
+    'action_cross_sequence': EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
     'minimum': EvilEnum.MINIMUM_EVIL,
     'random': EvilEnum.RANDOM,
     'none': EvilEnum.NONE,
@@ -315,11 +316,10 @@ class ColorGridBackground:
                 backgrounds would simply result in unused backgrounds.
             `EVIL_ACTION_CROSS_SEQUENCE`:  If set, crosses action spaces with
                 sequence positions to generate mapping to backgrounds.
-                Currently only supports `action_power`, and not
-                `action_splits`. The number of colors for discretizing the
-                sequence space will be determined according to the floor
-                division of `num_colors_per_cell` and the action space
-                cardinality, such that our action space assignments are
+                If not using `action_splits`, he number of colors for
+                discretizing the sequence space will be determined according
+                to the floor division of `num_colors_per_cell` and the action
+                space cardinality, such that our action space assignments are
                 unique for a given sequence position according to
                 actionSpaceAssignmentsForStep =
                 globalSpaceActionAssignments[stepPos % numColorsForSequence].
@@ -410,10 +410,19 @@ class ColorGridBackground:
                     self._num_colors_per_cell, self._action_dims_to_split,
                     self._action_power)
         elif evil_level is EvilEnum.EVIL_ACTION_CROSS_SEQUENCE:
-            self.colors_per_action_dim, self.num_colors_for_sequence = (
-                get_colors_for_action_and_sequence_evil(
-                    num_colors_per_cell, action_dims_to_split, action_power,
-                    action_splits))
+            if action_splits is None:
+                self.colors_per_action_dim, self.num_colors_for_sequence = (
+                    get_colors_for_action_and_sequence_evil(
+                        num_colors_per_cell, action_dims_to_split, action_power,
+                        action_splits))
+            else:
+                self.colors_per_action_dim = action_splits
+                total = 1
+                for i in self.colors_per_action_dim:
+                    total *= i
+                self.num_colors_for_sequence = num_colors_per_cell // total
+                print(f'num_colors_for_sequence: {self.num_colors_for_sequence}')
+                assert total * self.num_colors_for_sequence == num_colors_per_cell
 
         np.random.seed(random_seed)
         self._color_grid = np.random.randint(255, size=[
