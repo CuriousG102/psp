@@ -48,7 +48,7 @@ class JAXAgent(embodied.Agent):
     self.varibs = self._init_varibs(obs_space, act_space)
     self.sync()
 
-  def policy(self, obs, state=None, mode='train'):
+  def policy(self, obs, state=None, mode='train', include_recon=False):
     obs = obs.copy()
     obs = self._convert_inps(obs, self.policy_devices)
     rng = self._next_rngs(self.policy_devices)
@@ -59,7 +59,8 @@ class JAXAgent(embodied.Agent):
       state = tree_map(
           np.asarray, state, is_leaf=lambda x: isinstance(x, list))
       state = self._convert_inps(state, self.policy_devices)
-    (outs, state), _ = self._policy(varibs, rng, obs, state, mode=mode)
+    (outs, state), _ = self._policy(varibs, rng, obs, state, mode=mode,
+                                    include_recon=include_recon)
     outs = self._convert_outs(outs, self.policy_devices)
     # TODO: Consider keeping policy states in accelerator memory.
     state = self._convert_outs(state, self.policy_devices)
@@ -84,7 +85,7 @@ class JAXAgent(embodied.Agent):
         mets[f'params_{name}'] = float(count)
     return outs, state, mets
 
-  def report(self, data):
+  def report(self, data, include_recon=False):
     rng = self._next_rngs(self.train_devices)
     mets, _ = self._report(self.varibs, rng, data)
     mets = self._convert_mets(mets, self.train_devices)

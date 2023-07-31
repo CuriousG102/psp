@@ -50,7 +50,7 @@ class Agent(nj.Module):
   def train_initial(self, batch_size):
     return self.wm.initial(batch_size)
 
-  def policy(self, obs, state, mode='train'):
+  def policy(self, obs, state, mode='train', include_recon=False):
     self.config.jax.jit and print('Tracing policy function.')
     obs = self.preprocess(obs)
     (prev_latent, prev_action), task_state, expl_state = state
@@ -60,6 +60,7 @@ class Agent(nj.Module):
     self.expl_behavior.policy(latent, expl_state)
     task_outs, task_state = self.task_behavior.policy(latent, task_state)
     expl_outs, expl_state = self.expl_behavior.policy(latent, expl_state)
+    outs = None
     if mode == 'eval':
       outs = task_outs
       outs['action'] = outs['action'].sample(seed=nj.rng())
@@ -72,6 +73,12 @@ class Agent(nj.Module):
       outs = task_outs
       outs['log_entropy'] = outs['action'].entropy()
       outs['action'] = outs['action'].sample(seed=nj.rng())
+
+    if include_recon:
+      if outs is None:
+        outs = {}
+      outs['recon'] = self.wm.heads['decoder'](latent)['image'].mode()
+
     state = ((latent, outs['action']), task_state, expl_state)
     return outs, state
 

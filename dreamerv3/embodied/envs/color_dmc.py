@@ -27,6 +27,7 @@ class DMC(embodied.Env):
           action_dims_to_split=[],
           action_power=None,
           action_splits=None,
+          include_foreground_mask=False
   ):
     # TODO: This env variable is meant for headless GPU machines but may fail
     # on CPU-only machines.
@@ -62,6 +63,7 @@ class DMC(embodied.Env):
     )
     self._evil_level = evil_level
     self._step = 0
+    self._include_foreground_mask = include_foreground_mask
 
 
   @functools.cached_property
@@ -81,7 +83,10 @@ class DMC(embodied.Env):
         assert np.isfinite(action[key]).all(), (key, action[key])
     obs = self._env.step(action)
     if self._render:
-      obs['image'] = self.render(action, obs)
+      image, mask = self.render(action, obs)
+      obs['image'] = image
+      if self._include_foreground_mask:
+        obs['foreground_mask'] = mask
     return obs
 
   def render(self, action, obs):
@@ -105,4 +110,4 @@ class DMC(embodied.Env):
     else:
       self._step += 1
 
-    return image
+    return image, mask
