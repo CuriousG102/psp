@@ -1,6 +1,10 @@
 import enum
+import glob
+import os
 
 import numpy as np
+
+from tia.Dreamer.dmc2gym import natural_imgsource
 
 
 class EvilEnum(enum.Enum):
@@ -10,6 +14,7 @@ class EvilEnum(enum.Enum):
     EVIL_ACTION_CROSS_SEQUENCE = enum.auto()
     EVIL_SEQUENCE = enum.auto()
     MINIMUM_EVIL = enum.auto()
+    NATURAL = enum.auto()
     RANDOM = enum.auto()
     NONE = enum.auto()
 
@@ -22,6 +27,7 @@ EVIL_CHOICE_CONVENIENCE_MAPPING = {
     'action_cross_sequence': EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
     'minimum': EvilEnum.MINIMUM_EVIL,
     'random': EvilEnum.RANDOM,
+    'natural': EvilEnum.NATURAL,
     'none': EvilEnum.NONE,
 }
 
@@ -229,6 +235,7 @@ class ColorGridBackground:
             action_dims_to_split=[],
             action_power=2,
             action_splits=None,
+            natural_video_dir=None,
             height=84,
             width=84,
             random_seed=1,
@@ -335,6 +342,10 @@ class ColorGridBackground:
                 Since cells are not chosen jointly, unlike other modes, this
                 is myuch like static, but the colors for each cell are chosen
                 in advance.
+            `NATURAL`: Currently hacky, allows re-use of this interface
+                for one more distraction task. When this is set to true a
+                black-and-white video background replaces the background.
+                It is not controlled by the usual params.
             `NONE`: The background is not replaced.
         :param action_dims_to_split: Described under `evil_level`
             `EVIL_ACTION`. Action dimensions to be considered for action to
@@ -345,6 +356,9 @@ class ColorGridBackground:
         :param action_splits: Described under `evil_level`
             `EVIL_ACTION`. Specifies how many spaces each individual action
             dimension will be split into.
+        :param natural_video_dir: Directory containing natural videos.
+            Required if `evil_level` is `NATURAL`. Can be populated for other
+            `evil_level`s and will simply serve as a no-op.
         :param height: Image height.
         :param width: Image width.
         :param random_seed: Random seed to use for choosing background.
@@ -363,6 +377,9 @@ class ColorGridBackground:
         self._num_cells_per_dim = num_cells_per_dim
         self._action_dims_to_split = action_dims_to_split
         self._action_power = action_power
+        self._natural_video_dir = natural_video_dir
+        self._natural_video_source = None
+        self._color_grid = None
         self._height = height
         self._width = width
 
@@ -374,7 +391,7 @@ class ColorGridBackground:
             # TODO: Also support walker run.
             raise ValueError('Other tasks not supported')
 
-        if action_splits is None:
+        if action_splits is None and self._evil_level is not EvilEnum.NATURAL:
             min_colors_needed = get_min_colors_needed(
                 evil_level, self.reward_range, self._action_dims_to_split,
                 self._action_power)
@@ -425,9 +442,21 @@ class ColorGridBackground:
                 assert total * self.num_colors_for_sequence == num_colors_per_cell
 
         np.random.seed(random_seed)
-        self._color_grid = np.random.randint(255, size=[
-            self._num_cells_per_dim, self._num_cells_per_dim,
-            self._num_colors_per_cell, 3])
+        if evil_level is not EvilEnum.NATURAL:
+            self._color_grid = np.random.randint(255, size=[
+                self._num_cells_per_dim, self._num_cells_per_dim,
+                self._num_colors_per_cell, 3])
+        else:
+            assert natural_video_dir is not None
+            files = glob.glob(os.path.expanduser(natural_video_dir))
+            assert len(files), (
+                f'Pattern {natural_video_dir} does not match any files.')
+            self._natural_video_source = natural_imgsource.RandomVideoSource(
+                (self._height, self._width), files, grayscale=True,
+                # Hardcoded to episode length following precedent set by TIA
+                # and Denoised MDPs.
+                total_frames=1000
+            )
 
     def get_background_image(self, t, action, reward) -> np.array:
         """Returns appropriate background image for t, action, reward.
@@ -483,6 +512,10 @@ class ColorGridBackground:
         elif self._evil_level is EvilEnum.MINIMUM_EVIL:
             random_idx = np.random.randint(self._num_colors_per_cell)
             color_grid = self._color_grid[:, :, random_idx, :]
+        elif self._evil_level is EvilEnum.NATURAL:
+            if t == 0:
+                self._natural_video_source.reset()
+            return self._natural_video_source.get_image()
         else:
             raise ValueError(f'{self._evil_level} not supported.')
 

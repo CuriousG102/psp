@@ -48,6 +48,7 @@ def main(argv=None):
         action_splits=(
             config.evil.action_splits if config.evil.action_power < 0
             else None),
+        natural_video_dir=config.evil.natural_video_dir,
     )
     env = dreamerv3.wrap_env(env, config)
     env = embodied.BatchEnv([env], parallel=False)

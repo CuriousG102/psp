@@ -74,10 +74,12 @@ class Agent(nj.Module):
       outs['log_entropy'] = outs['action'].entropy()
       outs['action'] = outs['action'].sample(seed=nj.rng())
 
-    if include_recon:
-      if outs is None:
-        outs = {}
-      outs['recon'] = self.wm.heads['decoder'](latent)['image'].mode()
+    # TODO: Figure out issue with recon code in Jax jit
+    #       tracing.
+    # if include_recon:
+    #   if outs is None:
+    #     outs = {}
+    #   outs['recon'] = self.wm.heads['decoder'](latent)['image'].mode()
 
     state = ((latent, outs['action']), task_state, expl_state)
     return outs, state

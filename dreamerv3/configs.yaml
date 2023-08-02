@@ -62,6 +62,7 @@ defaults:
     action_dims_to_split: [0, 1, 2, 3, 4, 5]
     action_power: 3
     action_splits: [0, 0, 0, 0, 0, 0]
+    natural_video_dir: '/media/hdd/Storage/kinetics-downloader/dataset/train/driving_car/*.mp4'
 
   # Agent
   task_behavior: Greedy
@@ -345,6 +346,10 @@ random_evil:
     evil_level: random
     action_power: 1
     action_splits: [0, 0, 0, 0, 0, 0]
+
+natural_evil:
+  evil:
+    evil_level: natural
 
 no_evil:
   evil:

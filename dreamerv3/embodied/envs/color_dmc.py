@@ -27,7 +27,8 @@ class DMC(embodied.Env):
           action_dims_to_split=[],
           action_power=None,
           action_splits=None,
-          include_foreground_mask=False
+          include_foreground_mask=False,
+          natural_video_dir=None,
   ):
     # TODO: This env variable is meant for headless GPU machines but may fail
     # on CPU-only machines.
@@ -60,6 +61,7 @@ class DMC(embodied.Env):
       action_splits=action_splits,
       height=size[0],
       width=size[1],
+      natural_video_dir=natural_video_dir,
     )
     self._evil_level = evil_level
     self._step = 0
