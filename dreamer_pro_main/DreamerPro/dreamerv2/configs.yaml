@@ -85,6 +85,7 @@ defaults:
   num_colors_per_cell: 11664
   evil_level: max
   action_power: 3
+  action_splits: [0]
 
 max_evil:
 
@@ -140,6 +141,14 @@ action_cross_sequence_evil_larger_3:
   num_colors_per_cell: 2500
   action_power: 4
   action_dims_to_split: [ 0 ]
+
+action_seq_evil_2500:
+
+  evil_level: action_cross_sequence
+  num_colors_per_cell: 2500
+  action_dims_to_split: [0, 1, 2, 3]
+  action_power: -1
+  action_splits: [5, 5, 5, 5]
 
 atari:
 
