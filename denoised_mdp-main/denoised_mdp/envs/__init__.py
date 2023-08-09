@@ -21,17 +21,6 @@ from .interaction import env_interact_random_actor, env_interact_with_model, Env
 from wrappers import color_grid_utils
 
 
-EVIL_CHOICES = {
-    'max': color_grid_utils.EvilEnum.MAXIMUM_EVIL,
-    'reward': color_grid_utils.EvilEnum.EVIL_REWARD,
-    'action': color_grid_utils.EvilEnum.EVIL_ACTION,
-    'sequence': color_grid_utils.EvilEnum.EVIL_SEQUENCE,
-    'minimum': color_grid_utils.EvilEnum.MINIMUM_EVIL,
-    'random': color_grid_utils.EvilEnum.RANDOM,
-    'none': color_grid_utils.EvilEnum.NONE
-}
-
-
 class EnvKind(enum.Enum):
     dmc = enum.auto()
     robodesk = enum.auto()
@@ -72,7 +61,7 @@ class EnvKind(enum.Enum):
             batch_shape=batch_shape,
             num_cells_per_dim=num_cells_per_dim,
             num_colors_per_cell=num_colors_per_cell,
-            evil_level=EVIL_CHOICES[evil_level],
+            evil_level=color_grid_utils.EVIL_CHOICE_CONVENIENCE_MAPPING[evil_level],
             action_dims_to_split=action_dims_to_split,
             action_power=action_power if not action_splits else None,
             action_splits=action_splits if action_splits else None,
