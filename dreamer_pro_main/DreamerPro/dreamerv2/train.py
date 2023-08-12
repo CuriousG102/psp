@@ -76,18 +76,6 @@ should_video_train = elements.Every(config.eval_every)
 should_video_eval = elements.Every(config.eval_every)
 
 
-EVIL_CHOICES = {
-    'max': color_grid_utils.EvilEnum.MAXIMUM_EVIL,
-    'reward': color_grid_utils.EvilEnum.EVIL_REWARD,
-    'action': color_grid_utils.EvilEnum.EVIL_ACTION,
-    'sequence': color_grid_utils.EvilEnum.EVIL_SEQUENCE,
-    'action_cross_sequence': color_grid_utils.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
-    'minimum': color_grid_utils.EvilEnum.MINIMUM_EVIL,
-    'random': color_grid_utils.EvilEnum.RANDOM,
-    'none': color_grid_utils.EvilEnum.NONE
-}
-
-
 def make_env(mode):
   suite, task = config.task.split('_', 1)
   if suite == 'dmc':
@@ -98,7 +86,7 @@ def make_env(mode):
       task, config.action_repeat, config.image_size,
       num_cells_per_dim=config.num_cells_per_dim,
       num_colors_per_cell=config.num_colors_per_cell,
-      evil_level=EVIL_CHOICES[config.evil_level],
+      evil_level=color_grid_utils.EVIL_CHOICE_CONVENIENCE_MAPPING[config.evil_level],
       action_power=config.action_power,
       action_splits=config.action_splits if 'action_splits' in config else None,
       action_dims_to_split=config.action_dims_to_split if 'action_dims_to_split' in config else None,
