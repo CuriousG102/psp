@@ -13,7 +13,6 @@ class DMC:
 
   def __init__(self, name, action_repeat=1, size=(64, 64), camera=None):
     os.environ['MUJOCO_GL'] = 'egl'
-    assert name == 'cheetah_run'
     ################################################################################
     # Implementation of Cheetah/Walker Run Sparse follows
     # https://github.com/younggyoseo/RE3
