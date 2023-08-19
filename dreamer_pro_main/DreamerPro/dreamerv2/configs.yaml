@@ -84,7 +84,7 @@ defaults:
   num_cells_per_dim: 16
   num_colors_per_cell: 11664
   evil_level: max
-  action_power: 3
+  action_power: -1
   action_splits: [0]
 
 max_evil:

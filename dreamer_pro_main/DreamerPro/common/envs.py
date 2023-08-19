@@ -199,7 +199,8 @@ class ColorGridBg(color_grid.DmcColorGridWrapper):
     super().__init__(
       domain, task, num_cells_per_dim, num_colors_per_cell, evil_level,
       action_dims_to_split=action_dims_to_split, action_power=action_power,
-      action_splits=action_splits, no_agent=no_agent, task_kwargs=task_kwargs,
+      action_splits=action_splits if action_power < 0 else None,
+      no_agent=no_agent, task_kwargs=task_kwargs,
       visualize_reward=visualize_reward, from_pixels=from_pixels,
       height=size[0], width=size[1], camera_id=0,
       frame_skip=action_repeat)
