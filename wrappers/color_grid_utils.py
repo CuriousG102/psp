@@ -132,7 +132,7 @@ def get_colors_for_action_and_sequence_evil(
         num_colors_per_cell - colors_for_action * colors_for_sequence)
     if action_splits is None:
         action_splits = split_action_space(
-            action_dims_to_split, colors_for_action, power=action_power),
+            action_dims_to_split, colors_for_action, power=action_power)
     return (action_splits, colors_for_sequence)
 
 
