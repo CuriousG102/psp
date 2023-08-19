@@ -159,6 +159,13 @@ action_seq_evil_2500:
   action_power: -1
   action_splits: [5, 5, 5, 5]
 
+action_cross_sequence_evil_new:
+
+    evil_level: action_cross_sequence
+    num_colors_per_cell: 2500
+    action_power: 4
+    action_dims_to_split: [ 0 ]
+
 atari:
 
   task: atari_pong
