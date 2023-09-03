@@ -4,7 +4,6 @@ import os
 
 import numpy as np
 
-from tia.Dreamer.dmc2gym import natural_imgsource
 
 
 class EvilEnum(enum.Enum):
@@ -451,6 +450,7 @@ class ColorGridBackground:
             files = glob.glob(os.path.expanduser(natural_video_dir))
             assert len(files), (
                 f'Pattern {natural_video_dir} does not match any files.')
+            from tia.Dreamer.dmc2gym import natural_imgsource
             self._natural_video_source = natural_imgsource.RandomVideoSource(
                 (self._height, self._width), files, grayscale=True,
                 # Hardcoded to episode length following precedent set by TIA

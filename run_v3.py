@@ -14,6 +14,8 @@ def main(argv=None):
     config = embodied.Config(dreamerv3.configs['defaults'])
     config = config.update(dreamerv3.configs['dmc_vision'])
     for name in parsed.configs:
+        if name == 'defaults':
+            continue
         config = config.update(dreamerv3.configs[name])
     config = embodied.Flags(config).parse(other)
     args = embodied.Config(
@@ -31,25 +33,36 @@ def main(argv=None):
         embodied.logger.TensorBoardOutput(logdir),
     ])
 
-    env = color_dmc.DMC(
-        config.task,
-        repeat=config.env.dmc.repeat,
-        size=config.env.dmc.size,
-        camera=config.env.dmc.camera,
-        num_cells_per_dim=config.evil.num_cells_per_dim,
-        num_colors_per_cell=config.evil.num_colors_per_cell,
-        evil_level=color_grid_utils.EVIL_CHOICE_CONVENIENCE_MAPPING[
-            config.evil.evil_level
-        ],
-        action_dims_to_split=config.evil.action_dims_to_split,
-        action_power=(
-            config.evil.action_power if config.evil.action_power >= 0
-            else None),
-        action_splits=(
-            config.evil.action_splits if config.evil.action_power < 0
-            else None),
-        natural_video_dir=config.evil.natural_video_dir,
-    )
+    if config.environment == 'dmc':
+        env = color_dmc.DMC(
+            config.task,
+            repeat=config.env.dmc.repeat,
+            size=config.env.dmc.size,
+            camera=config.env.dmc.camera,
+            num_cells_per_dim=config.evil.num_cells_per_dim,
+            num_colors_per_cell=config.evil.num_colors_per_cell,
+            evil_level=color_grid_utils.EVIL_CHOICE_CONVENIENCE_MAPPING[
+                config.evil.evil_level
+            ],
+            action_dims_to_split=config.evil.action_dims_to_split,
+            action_power=(
+                config.evil.action_power if config.evil.action_power >= 0
+                else None),
+            action_splits=(
+                config.evil.action_splits if config.evil.action_power < 0
+                else None),
+            natural_video_dir=config.evil.natural_video_dir,
+        )
+    elif config.environment == 'rlbench':
+        from dreamerv3.embodied.envs import rlbench
+        env = rlbench.RLBench(
+            config.task,
+            size=config.env.rlbench.size,
+            action_repeat=config.env.rlbench.repeat,
+            shadows=config.env.rlbench.shadows
+        )
+    else:
+        raise ValueError(f'{config.environment} not supported.')
     env = dreamerv3.wrap_env(env, config)
     env = embodied.BatchEnv([env], parallel=False)
 

@@ -2,6 +2,7 @@ defaults:
 
   seed: 0
   method: name
+  environment: 'dmc'
   task: dummy_disc
   logdir: /dev/null
   replay: uniform
@@ -53,6 +54,7 @@ defaults:
     dmlab: {size: [64, 64], repeat: 4, episodic: True}
     minecraft: {size: [64, 64], break_speed: 100.0}
     dmc: {size: [64, 64], repeat: 2, camera: -1}
+    rlbench: {size: [64, 64], repeat: 2, shadows: True}
     loconav: {size: [64, 64], repeat: 2, camera: -1}
 
   evil:
