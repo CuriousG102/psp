@@ -59,7 +59,8 @@ def main(argv=None):
             config.task,
             size=config.env.rlbench.size,
             action_repeat=config.env.rlbench.repeat,
-            shadows=config.env.rlbench.shadows
+            shadows=config.env.rlbench.shadows,
+            max_length=config.env.rlbench.max_length
         )
     else:
         raise ValueError(f'{config.environment} not supported.')

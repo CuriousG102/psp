@@ -22,6 +22,7 @@ class RLBench(embodied.Env):
       size=(64, 64,),
       action_repeat=1,
       shadows=True,
+      max_length=10_000
   ):
     # we only support reach_target in this codebase
     obs_config = ObservationConfig()
@@ -63,6 +64,8 @@ class RLBench(embodied.Env):
 
     self._size = size
     self._action_repeat = action_repeat
+    self._step = 0
+    self._max_length = max_length
 
   @functools.cached_property
   def obs_space(self):
@@ -95,6 +98,7 @@ class RLBench(embodied.Env):
       obs = self._prev_obs
       for i in range(self._action_repeat):
         obs, reward_, terminal = self._task.step(action['action'])
+        self._step += 1
         success, _ = self._task._task.success()
         reward += reward_
         if terminal:
@@ -109,7 +113,7 @@ class RLBench(embodied.Env):
     obs = {
       'reward': reward,
       'is_first': False,
-      'is_last': terminal,
+      'is_last': terminal or self._step >= self._max_length,
       'is_terminal': terminal,
       'image': obs.front_rgb,
       'success': success,
@@ -119,6 +123,7 @@ class RLBench(embodied.Env):
   def _reset(self):
     _, obs = self._task.reset()
     self._prev_obs = obs
+    self._step = 0
     obs = {
       'reward': 0.0,
       'is_first': True,
