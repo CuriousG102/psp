@@ -91,6 +91,7 @@ defaults:
   dyn_v_grad: false
   rep_v_grad: false
   image_v_grad: false
+  v_grad_warmup_steps: 0
   dyn_loss: {impl: kl, free: 1.0}
   rep_loss: {impl: kl, free: 1.0}
   model_opt: {opt: adam, lr: 1e-4, eps: 1e-8, clip: 1000.0, wd: 0.0, warmup: 0, lateclip: 0.0}
@@ -401,3 +402,6 @@ image_value_gradient_norm_keep_magnitude:
 
 reward_head_gradient_weighting:
   gradient_weighting_net: 'reward_function'
+
+delayed_start:
+  v_grad_warmup_steps: 100000

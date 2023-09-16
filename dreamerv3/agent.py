@@ -129,6 +129,7 @@ class Agent(nj.Module):
         value = value.astype(jnp.float32)
       obs[key] = value
     obs['cont'] = 1.0 - obs['is_terminal'].astype(jnp.float32)
+    obs['step'] = jnp.array([int(self.step)] * len(obs['image']))
     return obs
 
 
@@ -238,21 +239,33 @@ class WorldModel(nj.Module):
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
     losses = {}
+    rssm_loss_weight = None
+    if self.config.dyn_v_grad or self.config.rep_v_grad:
+      rssm_loss_weight = jax.lax.cond(
+        data['step'] >= self.config.v_grad_warmup_steps,
+        lambda x: x,
+        lambda x: tree_map(jnp.ones_like, x),
+        latent_v_grad
+      )
     losses['dyn'] = self.rssm.dyn_loss(
         post, prior, **self.config.dyn_loss,
-        weight=latent_v_grad if self.config.dyn_v_grad else None,
+        weight=rssm_loss_weight if self.config.dyn_v_grad else None,
         normed=self.config.latent_v_grad_normed,
         keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude,
         percentile_clip=self.config.latent_v_grad_percentile_clip)
     losses['rep'] = self.rssm.rep_loss(
         post, prior, **self.config.rep_loss,
-        weight=latent_v_grad if self.config.rep_v_grad else None,
+        weight=rssm_loss_weight if self.config.rep_v_grad else None,
         normed=self.config.latent_v_grad_normed,
         keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude,
         percentile_clip=self.config.latent_v_grad_percentile_clip)
     for key, dist in dists.items():
       if image_v_grad is not None and key in self.encoder.cnn_shapes:
         weights = jnp.abs(image_v_grad[key]) + 1e-6  # [L, H, W, C]
+        weights = jax.lax.cond(
+          data['step'] >= self.config.v_grad_warmup_steps,
+          lambda x: x, jnp.ones_like, weights
+        )
 
         if self.config.image_v_grad_percentile_clip:
           p95 = jnp.percentile(weights, 95)
