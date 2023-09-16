@@ -94,7 +94,7 @@ class DMC(embodied.Env):
   def render(self, action, obs):
     image = self._dmenv.physics.render(*self._size, camera_id=self._camera)
     if self._evil_level is color_grid_utils.EvilEnum.NONE:
-      return image
+      return image, None
 
     if action['reset']:
       self._step = 0
