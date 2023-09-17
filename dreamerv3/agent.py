@@ -262,10 +262,16 @@ class WorldModel(nj.Module):
     for key, dist in dists.items():
       if image_v_grad is not None and key in self.encoder.cnn_shapes:
         weights = jnp.abs(image_v_grad[key]) + 1e-6  # [L, H, W, C]
-        weights = jax.lax.cond(
-          data['step'] >= self.config.v_grad_warmup_steps,
-          lambda x: x, jnp.ones_like, weights
-        )
+
+        warmup = self.config.v_grad_warmup_steps
+        if warmup > 0:
+          weights_scale = jnp.minimum(data['step'] / warmup, 1)
+        else:
+          weights_scale = jnp.ones_like(data['step'])
+
+        weights = (
+                jnp.ones_like(weights) * (1 - weights_scale)
+                + weights * weights_scale)
 
         if self.config.image_v_grad_percentile_clip:
           p95 = jnp.percentile(weights, 95)
@@ -307,6 +313,8 @@ class WorldModel(nj.Module):
       gradients_dict['latent_weight'] = latent_v_grad['stoch']
     if self.config.image_v_grad:
       gradients_dict['image_weight'] = image_v_grad['image']
+      gradients_dict['scaled_image_weight'] = weights
+      gradients_dict['image_weight_scale_factor'] = weights_scale
     return (data, post, prior, losses, model_loss, state, out,
             gradients_dict)
 
