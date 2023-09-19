@@ -141,7 +141,12 @@ class WorldModel(nj.Module):
     self.config = config
     shapes = {k: tuple(v.shape) for k, v in obs_space.items()}
     shapes = {k: v for k, v in shapes.items() if not k.startswith('log_')}
-    self.encoder = nets.MultiEncoder(shapes, **config.encoder, name='enc')
+    self.encoder = nets.MultiEncoder(
+      shapes, **config.encoder,
+      train_image_augmentation=config.image_augmentation.enabled,
+      train_image_augmentation_mean=config.image_augmentation.mean,
+      train_image_augmentation_std=config.image_augmentation.std,
+      name='enc')
     self.rssm = nets.RSSM(**config.rssm, name='rssm')
     self.heads = {
         'decoder': nets.MultiDecoder(shapes, **config.decoder, name='dec'),

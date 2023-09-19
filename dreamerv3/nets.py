@@ -259,7 +259,11 @@ class MultiEncoder(nj.Module):
       self, shapes, cnn_keys=r'.*', mlp_keys=r'.*', mlp_layers=4,
       mlp_units=512, cnn='resize', cnn_depth=48,
       cnn_blocks=2, resize='stride',
-      symlog_inputs=False, minres=4, **kw):
+      symlog_inputs=False, minres=4,
+      train_image_augmentation=False,
+      train_image_augmentation_mean=.05,
+      train_image_augmentation_std=.05,
+      **kw):
     excluded = ('is_first', 'is_last')
     shapes = {k: v for k, v in shapes.items() if (
         k not in excluded and not k.startswith('log_'))}
@@ -268,6 +272,9 @@ class MultiEncoder(nj.Module):
     self.mlp_shapes = {k: v for k, v in shapes.items() if (
         len(v) in (1, 2) and re.match(mlp_keys, k))}
     self.shapes = {**self.cnn_shapes, **self.mlp_shapes}
+    self.train_image_augmentation = train_image_augmentation
+    self.train_image_augmentation_mean = train_image_augmentation_mean
+    self.train_image_augmentation_std = train_image_augmentation_std
     print('Encoder CNN shapes:', self.cnn_shapes)
     print('Encoder MLP shapes:', self.mlp_shapes)
     cnn_kw = {**kw, 'minres': minres, 'name': 'cnn'}
@@ -288,6 +295,11 @@ class MultiEncoder(nj.Module):
     outputs = []
     if self.cnn_shapes:
       inputs = jnp.concatenate([data[k] for k in self.cnn_shapes], -1)
+      if self.train_image_augmentation:
+        aug = (
+            self.train_image_augmentation_mean
+            + self.train_image_augmentation_std * jax.random.normal(nj.rng()))
+        inputs += aug
       output = self._cnn(inputs)
       output = output.reshape((output.shape[0], -1))
       outputs.append(output)
