@@ -175,7 +175,7 @@ class WorldModel(nj.Module):
     all_data = {}
     all_data.update(d_data)
     all_data.update(data)
-    embed = self.encoder(all_data)
+    embed = self.encoder(all_data, training=True)
     prev_latent, prev_action = state
     prev_actions = jnp.concatenate([
       prev_action[None], all_data['action'][:-1]], 0)

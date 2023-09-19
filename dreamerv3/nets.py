@@ -286,7 +286,7 @@ class MultiEncoder(nj.Module):
     if self.mlp_shapes:
       self._mlp = MLP(None, mlp_layers, mlp_units, dist='none', **mlp_kw)
 
-  def __call__(self, data):
+  def __call__(self, data, training=False):
     some_key, some_shape = list(self.shapes.items())[0]
     batch_dims = data[some_key].shape[:-len(some_shape)]
     data = {
@@ -295,7 +295,7 @@ class MultiEncoder(nj.Module):
     outputs = []
     if self.cnn_shapes:
       inputs = jnp.concatenate([data[k] for k in self.cnn_shapes], -1)
-      if self.train_image_augmentation:
+      if self.train_image_augmentation and training:
         aug = (
             self.train_image_augmentation_mean
             + self.train_image_augmentation_std * jax.random.normal(nj.rng()))
