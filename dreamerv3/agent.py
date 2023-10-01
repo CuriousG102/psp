@@ -50,13 +50,45 @@ class Agent(nj.Module):
   def train_initial(self, batch_size):
     return self.wm.initial(batch_size)
 
-  def policy(self, obs, state, mode='train', include_recon=False):
+  def policy(self, obs, state, mode='train', include_recon=False, v_expl_mode='none'):
     self.config.jax.jit and print('Tracing policy function.')
     obs = self.preprocess(obs)
     (prev_latent, prev_action), task_state, expl_state = state
-    embed = self.wm.encoder(obs)
-    latent, _ = self.wm.rssm.obs_step(
-        prev_latent, prev_action, embed, obs['is_first'])
+    image_v_grad = None
+    v = None
+    if v_expl_mode == 'none':
+      embed = self.wm.encoder(obs)
+      latent, _ = self.wm.rssm.obs_step(
+          prev_latent, prev_action, embed, obs['is_first'])
+    elif v_expl_mode == 'gradient' or v_expl_mode == 'gradient_x_intensity':
+      vf = self._gradient_weighting_net
+      def get_v_v_latent(d_data, data, state):
+        (prev_latent, prev_action), _, _ = state
+        all_data = {**d_data, **data}
+        embed = self.wm.encoder(all_data)
+        # Return value from obs_step is post, prior
+        latent, _ = self.wm.rssm.obs_step(
+          prev_latent, prev_action, embed, all_data['is_first'])
+        v = vf(latent).mean()
+        return v, (v, latent)
+
+      get_v_v_latent = jax.jacrev(get_v_v_latent, has_aux=True)
+      image_v_grad, (v, latent) = get_v_v_latent(
+        {'image': obs['image']},
+        {k: v for k, v in obs.items() if k != 'image'},
+        state
+      )
+      batch_length = image_v_grad['image'].shape[0]
+      image_v_grad = tree_map(
+        lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
+        image_v_grad
+      )
+      image_v_grad = image_v_grad['image']
+      if v_expl_mode == 'gradient_x_intensity':
+        image_v_grad *= obs['image']
+    else:
+      raise ValueError(f'v_expl_mode {v_expl_mode} not supported.')
+
     self.expl_behavior.policy(latent, expl_state)
     task_outs, task_state = self.task_behavior.policy(latent, task_state)
     expl_outs, expl_state = self.expl_behavior.policy(latent, expl_state)
@@ -74,25 +106,30 @@ class Agent(nj.Module):
       outs['log_entropy'] = outs['action'].entropy()
       outs['action'] = outs['action'].sample(seed=nj.rng())
 
-    # TODO: Figure out issue with recon code in Jax jit
-    #       tracing.
-    # if include_recon:
-    #   if outs is None:
-    #     outs = {}
-    #   outs['recon'] = self.wm.heads['decoder'](latent)['image'].mode()
+    if include_recon:
+      if outs is None:
+        outs = {}
+      outs['recon'] = self.wm.heads['decoder'](latent)['image'].mode()
+
+    if v_expl_mode != 'none':
+      outs['image_expl'] = image_v_grad
+      outs['v'] = v
 
     state = ((latent, outs['action']), task_state, expl_state)
     return outs, state
+
+  @property
+  def _gradient_weighting_net(self):
+    return {
+      'value_function': self.task_behavior.ac.critics['extr'].net,
+      'reward_function': self.wm.heads['reward']
+    }[self.config.gradient_weighting_net]
 
   def train(self, data, state):
     self.config.jax.jit and print('Tracing train function.')
     metrics = {}
     data = self.preprocess(data)
-    gradient_weighting_net = {
-      'value_function': self.task_behavior.ac.critics['extr'].net,
-      'reward_function': self.wm.heads['reward']
-    }
-    vf = gradient_weighting_net[self.config.gradient_weighting_net]
+    vf = self._gradient_weighting_net
     state, wm_outs, mets = self.wm.train(data, state, vf)
     metrics.update(mets)
     context = {**data, **wm_outs['post']}

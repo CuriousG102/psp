@@ -48,7 +48,9 @@ class JAXAgent(embodied.Agent):
     self.varibs = self._init_varibs(obs_space, act_space)
     self.sync()
 
-  def policy(self, obs, state=None, mode='train', include_recon=False):
+  def policy(
+      self, obs, state=None, mode='train', include_recon=False,
+      v_expl_mode='none'):
     obs = obs.copy()
     obs = self._convert_inps(obs, self.policy_devices)
     rng = self._next_rngs(self.policy_devices)
@@ -59,8 +61,9 @@ class JAXAgent(embodied.Agent):
       state = tree_map(
           np.asarray, state, is_leaf=lambda x: isinstance(x, list))
       state = self._convert_inps(state, self.policy_devices)
-    (outs, state), _ = self._policy(varibs, rng, obs, state, mode=mode,
-                                    include_recon=include_recon)
+    (outs, state), _ = self._policy(
+      varibs, rng, obs, state, mode=mode, include_recon=include_recon,
+      v_expl_mode=v_expl_mode)
     outs = self._convert_outs(outs, self.policy_devices)
     # TODO: Consider keeping policy states in accelerator memory.
     state = self._convert_outs(state, self.policy_devices)
@@ -171,11 +174,15 @@ class JAXAgent(embodied.Agent):
     if len(self.policy_devices) == 1:
       kw = dict(device=self.policy_devices[0])
       self._init_policy = nj.jit(self._init_policy, **kw)
-      self._policy = nj.jit(self._policy, static=['mode'], **kw)
+      self._policy = nj.jit(
+        self._policy,
+        static=['mode', 'include_recon', 'v_expl_mode'], **kw)
     else:
       kw = dict(devices=self.policy_devices)
       self._init_policy = nj.pmap(self._init_policy, 'i', **kw)
-      self._policy = nj.pmap(self._policy, 'i', static=['mode'], **kw)
+      self._policy = nj.pmap(
+        self._policy, 'i',
+        static=['mode', 'include_recon', 'v_expl_mode'], **kw)
 
   def _convert_inps(self, value, devices):
     if len(devices) == 1:
