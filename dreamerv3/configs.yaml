@@ -90,6 +90,7 @@ defaults:
   image_v_grad_normed: false
   image_v_grad_norm_keep_magnitude: false
   image_v_grad_percentile_clip: false
+  image_v_grad_x_intensity: false
   latent_v_grad_normed: false
   latent_v_grad_norm_keep_magnitude: false
   latent_v_grad_percentile_clip: false
@@ -398,6 +399,9 @@ rep_value_gradient:
 
 image_value_gradient:
   image_v_grad: true
+
+image_value_gradient_x_intensity:
+  image_v_grad_x_intensity: true
 
 image_value_gradient_normed:
   image_v_grad_normed: true
