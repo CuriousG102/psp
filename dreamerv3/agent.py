@@ -60,7 +60,9 @@ class Agent(nj.Module):
       embed = self.wm.encoder(obs)
       latent, _ = self.wm.rssm.obs_step(
           prev_latent, prev_action, embed, obs['is_first'])
-    elif v_expl_mode == 'gradient' or v_expl_mode == 'gradient_x_intensity':
+    elif (v_expl_mode == 'gradient'
+          or v_expl_mode == 'gradient_x_intensity'
+          or v_expl_mode == 'integrated_gradient'):
       vf = self._gradient_weighting_net
       def get_v_v_latent(d_data, data, state):
         (prev_latent, prev_action), _, _ = state
@@ -71,21 +73,45 @@ class Agent(nj.Module):
           prev_latent, prev_action, embed, all_data['is_first'])
         v = vf(latent).mean()
         return v, (v, latent)
-
       get_v_v_latent = jax.jacrev(get_v_v_latent, has_aux=True)
-      image_v_grad, (v, latent) = get_v_v_latent(
-        {'image': obs['image']},
-        {k: v for k, v in obs.items() if k != 'image'},
-        state
-      )
-      batch_length = image_v_grad['image'].shape[0]
-      image_v_grad = tree_map(
-        lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
-        image_v_grad
-      )
-      image_v_grad = image_v_grad['image']
-      if v_expl_mode == 'gradient_x_intensity':
-        image_v_grad *= obs['image']
+
+      if (v_expl_mode == 'gradient'
+          or v_expl_mode == 'gradient_x_intensity'):
+        image_v_grad, (v, latent) = get_v_v_latent(
+          {'image': obs['image']},
+          {k: v for k, v in obs.items() if k != 'image'},
+          state
+        )
+        batch_length = image_v_grad['image'].shape[0]
+        image_v_grad = tree_map(
+          lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
+          image_v_grad
+        )
+        image_v_grad = image_v_grad['image']
+        if v_expl_mode == 'gradient_x_intensity':
+          image_v_grad *= obs['image']
+      else:
+        alphas = jnp.linspace(0, 1, 11)[:, None, None, None, None]
+        images = obs['image'][None, ...]
+        interp_images = alphas * images
+        interp_images = {'image': interp_images}
+        other_items = {k: jnp.repeat(v[None, ...], 11, axis=0) for k, v in obs.items() if k != 'image'}
+        state = tree_map(lambda x: jnp.repeat(x[None, ...], 11, axis=0), state)
+        get_v_v_latent = jax.vmap(get_v_v_latent)
+        image_v_grad, (v, latent) = get_v_v_latent(
+          interp_images,
+          other_items,
+          state
+        )
+        batch_length = image_v_grad['image'].shape[1]
+        image_v_grad = tree_map(
+          lambda x: x[:, jnp.arange(batch_length), jnp.arange(batch_length)],
+          image_v_grad
+        )
+        image_v_grad = image_v_grad['image']
+        image_v_grad = jnp.mean(image_v_grad, axis=0) * obs['image']
+        v = v[-1]
+        latent = tree_map(lambda x: x[-1], latent)
     else:
       raise ValueError(f'v_expl_mode {v_expl_mode} not supported.')
 
@@ -112,8 +138,8 @@ class Agent(nj.Module):
       outs['recon'] = self.wm.heads['decoder'](latent)['image'].mode()
 
     if v_expl_mode != 'none':
-      outs['image_expl'] = image_v_grad
       outs['v'] = v
+      outs['image_expl'] = image_v_grad
 
     state = ((latent, outs['action']), task_state, expl_state)
     return outs, state
