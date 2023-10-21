@@ -91,6 +91,7 @@ defaults:
   image_v_grad_norm_keep_magnitude: false
   image_v_grad_percentile_clip: false
   image_v_grad_x_intensity: false
+  image_v_grad_window_size: 1
   latent_v_grad_normed: false
   latent_v_grad_norm_keep_magnitude: false
   latent_v_grad_percentile_clip: false
@@ -417,3 +418,7 @@ delayed_start:
 
 image_augmentation:
   image_augmentation.enabled: true
+
+guided_silu_expl:
+  encoder.act: 'guided_silu'
+  critic.act: 'guided_silu'

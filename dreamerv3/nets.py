@@ -764,6 +764,26 @@ class Initializer:
       return shape[-2] * space, shape[-1] * space
 
 
+@jax.custom_vjp
+def guided_silu(x):
+  return jax.nn.silu(x)
+
+
+def guided_silu_fwd(x):
+  primal = residual = guided_silu(x)
+  return primal, residual
+
+
+def guided_silu_bwd(residual, grad):
+  def d_silu(x):
+    return jax.nn.sigmoid(x) + x * jax.nn.sigmoid(x) * (1 - jax.nn.sigmoid(x))
+
+  return d_silu(residual) * d_silu(grad) * grad,
+
+
+guided_silu.defvjp(guided_silu_fwd, guided_silu_bwd)
+
+
 def get_act(name):
   if callable(name):
     return name
@@ -771,6 +791,8 @@ def get_act(name):
     return lambda x: x
   elif name == 'mish':
     return lambda x: x * jnp.tanh(jax.nn.softplus(x))
+  elif name == 'guided_silu':
+    return guided_silu
   elif hasattr(jax.nn, name):
     return getattr(jax.nn, name)
   else:
