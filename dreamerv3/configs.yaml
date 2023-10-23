@@ -92,6 +92,7 @@ defaults:
   image_v_grad_percentile_clip: false
   image_v_grad_x_intensity: false
   image_v_grad_window_size: 1
+  image_v_grad_backprop_truncation: 1
   latent_v_grad_normed: false
   latent_v_grad_norm_keep_magnitude: false
   latent_v_grad_percentile_clip: false
