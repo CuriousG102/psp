@@ -344,11 +344,12 @@ class Optimizer(nj.Module):
 
   def __init__(
       self, lr, opt='adam', eps=1e-5, clip=100.0, warmup=0, wd=0.0,
-      wd_pattern=r'/(w|kernel)$', lateclip=0.0):
+      wd_pattern=r'/(w|kernel)$', lateclip=0.0, log_layer_norms=False):
     assert opt in ('adam', 'belief', 'yogi')
     assert wd_pattern[0] not in ('0', '1')
     # assert self.path not in self.PARAM_COUNTS
     self.PARAM_COUNTS[self.path] = None
+    self.log_layer_norms = log_layer_norms
     wd_pattern = re.compile(wd_pattern)
     chain = []
     if clip:
@@ -411,6 +412,9 @@ class Optimizer(nj.Module):
     metrics['loss'] = loss.mean()
     metrics['grad_norm'] = norm
     metrics['grad_steps'] = self.step.read()
+    if self.log_layer_norms:
+      for k, grad in grads.items():
+        metrics[f'norm_{k}'] = jnp.linalg.norm(grad)
     metrics = {f'{self.name}_{k}': v for k, v in metrics.items()}
     return (metrics, aux) if has_aux else metrics
 
