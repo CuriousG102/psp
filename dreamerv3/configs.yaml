@@ -93,6 +93,7 @@ defaults:
   image_v_grad_x_intensity: false
   image_v_grad_window_size: 1
   image_v_grad_backprop_truncation: 1
+  image_v_grad_interp_value: 1.
   latent_v_grad_normed: false
   latent_v_grad_norm_keep_magnitude: false
   latent_v_grad_percentile_clip: false
@@ -410,6 +411,9 @@ image_value_gradient_normed:
 
 image_value_gradient_norm_keep_magnitude:
   image_v_grad_norm_keep_magnitude: true
+
+image_value_gradient_interp_pt9:
+  image_v_grad_interp_value: .9
 
 reward_head_gradient_weighting:
   gradient_weighting_net: 'reward_function'

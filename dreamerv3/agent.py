@@ -112,6 +112,10 @@ class Agent(nj.Module):
         image_v_grad = jnp.mean(image_v_grad, axis=0) * obs['image']
         v = v[-1]
         latent = tree_map(lambda x: x[-1], latent)
+      image_v_grad = (
+          jnp.ones_like(image_v_grad) * (
+              1 - self.config.image_v_grad_interp_value)
+          + image_v_grad * self.config.image_v_grad_interp_value)
     else:
       raise ValueError(f'v_expl_mode {v_expl_mode} not supported.')
 
