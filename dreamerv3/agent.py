@@ -112,6 +112,8 @@ class Agent(nj.Module):
         image_v_grad = jnp.mean(image_v_grad, axis=0) * obs['image']
         v = v[-1]
         latent = tree_map(lambda x: x[-1], latent)
+      # Note: Not quite equivalent to train because we're not calling
+      #       absolute within policy, instead we do that in the caller.
       image_v_grad = (
           jnp.ones_like(image_v_grad) * (
               1 - self.config.image_v_grad_interp_value)
@@ -340,6 +342,10 @@ class WorldModel(nj.Module):
         weights = jnp.abs(image_v_grad[key]) + 1e-6  # [L, H, W, C]
         if self.config.image_v_grad_x_intensity:
           weights *= data[key]
+        weights = (
+            jnp.ones_like(weights) * (
+                1 - self.config.image_v_grad_interp_value)
+            + weights * self.config.image_v_grad_interp_value)
 
         warmup = self.config.v_grad_warmup_steps
         if warmup > 0:

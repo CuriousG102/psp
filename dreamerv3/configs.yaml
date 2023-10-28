@@ -415,6 +415,9 @@ image_value_gradient_norm_keep_magnitude:
 image_value_gradient_interp_pt9:
   image_v_grad_interp_value: .9
 
+image_value_gradient_interp_pt99:
+  image_v_grad_interp_value: .99
+
 reward_head_gradient_weighting:
   gradient_weighting_net: 'reward_function'
 
