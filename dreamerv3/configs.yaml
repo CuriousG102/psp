@@ -103,7 +103,7 @@ defaults:
   v_grad_warmup_steps: 0
   dyn_loss: {impl: kl, free: 1.0}
   rep_loss: {impl: kl, free: 1.0}
-  model_opt: {opt: adam, lr: 1e-4, eps: 1e-8, clip: 1000.0, wd: 0.0, warmup: 0, lateclip: 0.0, log_layer_norms: False}
+  model_opt: {opt: adam, lr: 1e-4, eps: 1e-8, clip: 1000.0, wd: 0.0, warmup: 0, lateclip: 0.0, log_layer_norms: True}
 
   # Actor Critic
   actor: {layers: 5, units: 1024, act: silu, norm: layer, minstd: 0.1, maxstd: 1.0, outscale: 1.0, outnorm: False, unimix: 0.01, inputs: [deter, stoch], winit: normal, fan: avg, symlog_inputs: False}
