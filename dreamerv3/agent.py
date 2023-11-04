@@ -293,9 +293,11 @@ class WorldModel(nj.Module):
         dist = coords[:, None] - coords[None, :]
         attends = (dist < window) & (dist >= 0)
         image_v_grad = tree_map(
-            lambda x: (
-                (x * attends[..., None, None, None]).sum(axis=0)
-                / attends[..., None, None, None].sum(axis=0)),
+            lambda x: ((
+                (x * attends[..., None, None, None]).astype(
+                  jnp.float32).sum(axis=0)
+                / attends[..., None, None, None].astype(
+                  jnp.float32).sum(axis=0))).astype(x.dtype),
             image_v_grad)
         image_v_grad = sg(image_v_grad)
 
