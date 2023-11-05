@@ -288,17 +288,22 @@ class WorldModel(nj.Module):
 
         image_v_grad, (embed, post, prior) = embed_post_prior(d_data, data, state)
         batch_length = image_v_grad['image'].shape[0]
-        window = self.config.image_v_grad_backprop_truncation
-        coords = jnp.arange(batch_length)
-        dist = coords[:, None] - coords[None, :]
-        attends = (dist < window) & (dist >= 0)
-        image_v_grad = tree_map(
-            lambda x: ((
-                (x * attends[..., None, None, None]).astype(
-                  jnp.float32).sum(axis=0)
-                / attends[..., None, None, None].astype(
-                  jnp.float32).sum(axis=0))).astype(x.dtype),
-            image_v_grad)
+        if self.config.image_v_grad_backprop_truncation > 1:
+          window = self.config.image_v_grad_backprop_truncation
+          coords = jnp.arange(batch_length)
+          dist = coords[:, None] - coords[None, :]
+          attends = (dist < window) & (dist >= 0)
+          image_v_grad = tree_map(
+              lambda x: ((
+                  (x * attends[..., None, None, None]).astype(
+                    jnp.float32).sum(axis=0)
+                  / attends[..., None, None, None].astype(
+                    jnp.float32).sum(axis=0))).astype(x.dtype),
+              image_v_grad)
+        else:
+          image_v_grad = tree_map(
+              lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
+              image_v_grad)
         image_v_grad = sg(image_v_grad)
 
         data.update(d_data)
