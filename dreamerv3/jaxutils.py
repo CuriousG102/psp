@@ -344,8 +344,8 @@ class Optimizer(nj.Module):
 
   def __init__(
       self, lr, opt='adam', eps=1e-5, clip=100.0, warmup=0, wd=0.0,
-      wd_pattern=r'/(w|kernel)$', lateclip=0.0, log_layer_norms=False):
-    assert opt in ('adam', 'belief', 'yogi')
+      wd_pattern=r'/(w|kernel)$', lateclip=0.0, log_layer_norms=False,
+      sgd_momentum=0.9, sgd_nesterov=False):
     assert wd_pattern[0] not in ('0', '1')
     # assert self.path not in self.PARAM_COUNTS
     self.PARAM_COUNTS[self.path] = None
@@ -356,6 +356,12 @@ class Optimizer(nj.Module):
       chain.append(optax.clip_by_global_norm(clip))
     if opt == 'adam':
       chain.append(optax.scale_by_adam(eps=eps))
+    elif opt == 'amsgrad':
+      chain.append(optax.amsgrad(lr))
+    elif opt == 'sgd':
+      chain.append(optax.sgd(
+          lr, momentum=sgd_momentum if sgd_momentum else None,
+          nesterov=sgd_nesterov))
     else:
       raise NotImplementedError(opt)
     if lateclip:
@@ -364,10 +370,12 @@ class Optimizer(nj.Module):
       chain.append(optax.additive_weight_decay(wd, lambda params: (
           tree_map(lambda k: bool(wd_pattern.search(k)), tree_keys(params)))))
     if warmup:
+      assert opt == 'adam'
       schedule = optax.linear_schedule(0.0, -lr, warmup)
       chain.append(optax.inject_hyperparams(optax.scale)(schedule))
     else:
-      chain.append(optax.scale(-lr))
+      if opt == 'adam':
+        chain.append(optax.scale(-lr))
     self.opt = optax.chain(*chain)
     self.step = nj.Variable(jnp.array, 0, jnp.int32, name='step')
     self.scaling = (COMPUTE_DTYPE == jnp.float16)
