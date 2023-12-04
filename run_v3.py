@@ -55,7 +55,7 @@ def main(argv=None):
                 config.evil.action_splits if config.evil.action_power < 0
                 else None),
             natural_video_dir=config.evil.natural_video_dir,
-            sam_seg_config=config.sam_seg_config,
+            sam_seg_config=config.sam_seg,
         )
     elif config.environment == 'rlbench':
         from dreamerv3.embodied.envs import rlbench

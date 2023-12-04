@@ -143,6 +143,10 @@ defaults:
       points_per_side: 16,
     }
 
+activate_sam:
+  sam_seg:
+    use_sam: true
+
 minecraft:
 
   task: minecraft_diamond
