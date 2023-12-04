@@ -22,7 +22,8 @@ class RLBench(embodied.Env):
       size=(64, 64,),
       action_repeat=1,
       shadows=True,
-      max_length=10_000
+      max_length=10_000,
+      sam_seg_config=None,
   ):
     # we only support reach_target in this codebase
     obs_config = ObservationConfig()
@@ -66,6 +67,7 @@ class RLBench(embodied.Env):
     self._action_repeat = action_repeat
     self._step = 0
     self._max_length = max_length
+    super().__init__(sam_seg_config)
 
   @functools.cached_property
   def obs_space(self):
@@ -117,6 +119,7 @@ class RLBench(embodied.Env):
       'is_terminal': terminal,
       'image': obs.front_rgb,
       'success': success,
+      **self._maybe_apply_sam_to_image(obs.front_rgb, 'image')
     }
     return obs
 

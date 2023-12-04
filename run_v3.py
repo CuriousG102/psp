@@ -1,3 +1,6 @@
+import os
+# We have to set this environmental variable before anything else imports keras.
+os.environ['KERAS_BACKEND'] = 'jax'
 import warnings
 
 import dreamerv3
@@ -52,6 +55,7 @@ def main(argv=None):
                 config.evil.action_splits if config.evil.action_power < 0
                 else None),
             natural_video_dir=config.evil.natural_video_dir,
+            sam_seg_config=config.sam_seg_config,
         )
     elif config.environment == 'rlbench':
         from dreamerv3.embodied.envs import rlbench
@@ -60,7 +64,8 @@ def main(argv=None):
             size=config.env.rlbench.size,
             action_repeat=config.env.rlbench.repeat,
             shadows=config.env.rlbench.shadows,
-            max_length=config.env.rlbench.max_length
+            max_length=config.env.rlbench.max_length,
+            sam_seg_config=config.sam_seg,
         )
     else:
         raise ValueError(f'{config.environment} not supported.')

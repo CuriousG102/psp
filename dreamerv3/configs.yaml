@@ -132,6 +132,17 @@ defaults:
   disag_target: [stoch]
   disag_models: 8
 
+  # SAM Config
+  sam_seg:
+    use_sam: false
+    model_name: sam_base_sa1b
+    generator_config: {
+      max_output_masks: 500,
+      pred_iou_thresh: 0.8,
+      stability_score_thresh: 0.85,
+      points_per_side: 16,
+    }
+
 minecraft:
 
   task: minecraft_diamond

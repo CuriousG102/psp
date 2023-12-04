@@ -29,6 +29,7 @@ class DMC(embodied.Env):
           action_splits=None,
           include_foreground_mask=False,
           natural_video_dir=None,
+          sam_seg_config=None,
   ):
     # TODO: This env variable is meant for headless GPU machines but may fail
     # on CPU-only machines.
@@ -66,7 +67,7 @@ class DMC(embodied.Env):
     self._evil_level = evil_level
     self._step = 0
     self._include_foreground_mask = include_foreground_mask
-
+    super().__init__(sam_seg_config)
 
   @functools.cached_property
   def obs_space(self):
@@ -89,6 +90,7 @@ class DMC(embodied.Env):
       obs['image'] = image
       if self._include_foreground_mask:
         obs['foreground_mask'] = mask
+      obs.update(self._maybe_apply_sam_to_image(image, 'image'))
     return obs
 
   def render(self, action, obs):

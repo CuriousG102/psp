@@ -1,3 +1,7 @@
+from jax import numpy as jnp
+from keras_cv import models as keras_cv_models
+import sam_keras
+
 class Agent:
 
   configs = {}  # dict of dicts
@@ -34,6 +38,30 @@ class Agent:
 
 
 class Env:
+
+  def __init__(self, sam_seg_config=None):
+    self._sam_seg_config = sam_seg_config
+    if self._sam_seg_config and self._sam_seg_config.use_sam:
+      self._sam_model = keras_cv_models.SegmentAnythingModel.from_preset(
+        self._sam_seg_config.model_name)
+      self._predictor = sam_keras.SAMPredictor(self._sam_model)
+      self._mask_generator = sam_keras.SAMAutomaticMaskGenerator(
+          predictor=self._predictor,
+          **self._sam_seg_config['generator_config']
+      )
+
+  def _maybe_apply_sam_to_image(self, image, prefix):
+    # TODO: Make sure the image format being passed in here is correct. It's
+    #       expected to be [0, 1] floats in HWC, but mask generator expects
+    #       [0, 255) uint8s in HWC, so we have to convert it.
+    if self._sam_seg_config is None:
+      return {}
+    image = image * 255.
+    image = jnp.cast(image, jnp.uint8)
+    masks = self._mask_generator.generate(image, verbose=0)
+    return {
+      f'{prefix}_masks': [mask['segmentation'] for mask in masks]
+    }
 
   def __len__(self):
     return 0  # Return positive integer for batched envs.
