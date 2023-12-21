@@ -171,6 +171,7 @@ def wait(predicate, message, sleep=0.001, notify=1.0):
 class GenericProcessed:
   def __init__(self, length, capacity, remover, sampler, limiter,
                preprocess_directory, postprocess_directory,
+               max_chunks_behind,
                overlap=None, online=False, chunks=256):
     assert capacity is None or 1 <= capacity
     self.length = length
@@ -196,11 +197,7 @@ class GenericProcessed:
         'postprocess_insert_wait_dur': 0,
         'postprocess_insert_wait_count': 0,
         'postprocess_inserts': 0,
-        'total_postprocessed': 0,
     }
-    self.non_reset_metrics = frozenset([
-      'total_postprocessed',
-    ])
     assert postprocess_directory is not None
     self.postprocess_directory = postprocess_directory
     self.postprocess_handler = PostprocessedFileHandler(
@@ -212,12 +209,22 @@ class GenericProcessed:
     self.postprocess_observer.start()
     self.first_add_call = True
     self.total_preprocessed = 0
+    self.total_postprocesed = 0
+    self.max_chunks_behind = max_chunks_behind
 
   def __len__(self):
     return len(self.table)
 
   def len_after_postprocessing_completes(self):
     return max(self.total_preprocessed - self.length + 1, 0)
+
+  def process_pending_not_too_large(self):
+    if (
+        (self.total_postprocesed - self.total_preprocessed)
+        // self.length <= self.max_chunks_behind):
+      return True, 'Not too far behind'
+    else:
+      return False, 'Too far behind'
 
   @property
   def stats(self):
@@ -235,11 +242,9 @@ class GenericProcessed:
       'sample_wait_avg': ratio(m['sample_wait_dur'], m['samples']),
       'sample_wait_frac': ratio(m['sample_wait_count'], m['samples']),
       'total_preprocessed': self.total_preprocessed,
-      'total_postprocessed': m['total_postprocessed']
+      'total_postprocessed': self.total_postprocesed
     }
     for key in self.metrics:
-      if key in self.non_reset_metrics:
-        continue
       self.metrics[key] = 0
     return stats
 
@@ -262,6 +267,8 @@ class GenericProcessed:
     # TODO: Add wait to sample when gap from pre to post processed is too
     #       large.
     dur = wait(self.limiter.want_sample, 'Replay sample is waiting')
+    wait(self.process_pending_not_too_large,
+         'Waiting for more examples to be processed')
     self.metrics['samples'] += 1
     self.metrics['sample_wait_dur'] += dur
     self.metrics['sample_wait_count'] += int(dur > 0)
@@ -312,7 +319,7 @@ class GenericProcessed:
       self.metrics['postprocess_inserts'] += 1
       self.metrics['postprocess_insert_wait_dur'] += dur
       self.metrics['postprocess_insert_wait_count'] += int(dur > 0)
-    self.metrics['total_postprocessed'] += 1
+    self.total_postprocesed += 1
     self.table[key] = seq
     self.remover[key] = seq
     self.sampler[key] = seq

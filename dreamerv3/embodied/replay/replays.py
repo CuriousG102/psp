@@ -29,7 +29,7 @@ class Uniform(generic.Generic):
 class UniformProcessed(generic.GenericProcessed):
   def __init__(
         self, length, capacity=None, preprocess_directory=None,
-        postprocess_directory=None, online=False,
+        postprocess_directory=None, max_chunks_behind=None, online=False,
         chunks=256,  # Reduce default chunk size as the chunks serve as shards
                     # for the postprocessor.
         min_size=4,  # Increase min size to 4 to give the postprocessor some
@@ -52,6 +52,7 @@ class UniformProcessed(generic.GenericProcessed):
         limiter=limiter,
         preprocess_directory=preprocess_directory,
         postprocess_directory=postprocess_directory,
+        max_chunks_behind=max_chunks_behind,
         online=online,
         chunks=chunks,
     )

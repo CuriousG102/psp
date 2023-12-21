@@ -73,7 +73,8 @@ def main(argv=None):
         replay = embodied.replay.UniformProcessed(
             config.batch_length, config.replay_size,
             logdir / 'preprocessed_replay',
-            logdir / 'postprocessed_replay')
+            logdir / 'postprocessed_replay',
+            config.max_chunks_behind)
     else:
         replay = embodied.replay.Uniform(
             config.batch_length, config.replay_size, logdir / 'replay')

@@ -12,8 +12,8 @@ from watchdog import observers
 
 
 class SAMEmulatorFileCopier(events.FileSystemEventHandler):
-  _DELAY_MIN = 30 # seconds
-  _DELAY_MAX = 60 # seconds
+  _DELAY_MIN = 60 # seconds
+  _DELAY_MAX = 120 # seconds
   _NUM_THREADS = 4 # Expected number of GPUS for the real thing.
 
   def __init__(self, preprocessed_directory, postprocessed_directory):
