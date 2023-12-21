@@ -1,10 +1,16 @@
+import concurrent.futures
+import os.path
 import time
 from collections import defaultdict, deque
 from functools import partial as bind
 
 import embodied
 import numpy as np
+from watchdog import events
+from watchdog import observers
 
+from . import chunk as chunklib
+from dreamerv3.embodied.core import path as pathlib
 from . import saver
 
 
@@ -160,3 +166,208 @@ def wait(predicate, message, sleep=0.001, notify=1.0):
       print(f'{message} ({detail})')
       notified = True
     time.sleep(sleep)
+
+
+class GenericProcessed:
+  def __init__(self, length, capacity, remover, sampler, limiter,
+               preprocess_directory, postprocess_directory,
+               overlap=None, online=False, chunks=256):
+    assert capacity is None or 1 <= capacity
+    self.length = length
+    self.capacity = capacity
+    self.remover = remover
+    self.sampler = sampler
+    self.limiter = limiter
+    if overlap is not None:
+      raise NotImplementedError(
+          'Overlap not supported due to extra burden for postprocessor.')
+    self.streams = defaultdict(bind(deque, maxlen=length))
+    self.table = {}
+    if online:
+      raise NotImplementedError('Online not yet supported')
+    assert preprocess_directory is not None
+    self.saver = preprocess_directory and saver.Saver(
+        preprocess_directory, chunks)
+    self.metrics = {
+        'samples': 0,
+        'sample_wait_dur': 0,
+        'sample_wait_count': 0,
+        'inserts': 0,
+        'postprocess_insert_wait_dur': 0,
+        'postprocess_insert_wait_count': 0,
+        'postprocess_inserts': 0,
+        'total_postprocessed': 0,
+    }
+    self.non_reset_metrics = frozenset([
+      'total_postprocessed',
+    ])
+    assert postprocess_directory is not None
+    self.postprocess_directory = postprocess_directory
+    self.postprocess_handler = PostprocessedFileHandler(
+        self._add_step_from_post)
+    self.postprocess_observer = observers.Observer()
+    self.postprocess_observer.schedule(
+        self.postprocess_handler, path=str(self.postprocess_directory),
+        recursive=False)
+    self.postprocess_observer.start()
+    self.first_add_call = True
+    self.total_preprocessed = 0
+
+  def __len__(self):
+    return len(self.table)
+
+  def len_after_postprocessing_completes(self):
+    return max(self.total_preprocessed - self.length + 1, 0)
+
+  @property
+  def stats(self):
+    ratio = lambda x, y: x / y if y else np.nan
+    m = self.metrics
+    stats = {
+      'size': len(self),
+      'inserts': m['inserts'],
+      'postprocess_inserts': m['postprocess_inserts'],
+      'samples': m['samples'],
+      'postprocess_insert_wait_avg': ratio(
+          m['postprocess_insert_wait_dur'], m['postprocess_inserts']),
+      'postprocess_insert_wait_frac': ratio(
+          m['postprocess_insert_wait_count'], m['postprocess_inserts']),
+      'sample_wait_avg': ratio(m['sample_wait_dur'], m['samples']),
+      'sample_wait_frac': ratio(m['sample_wait_count'], m['samples']),
+      'total_preprocessed': self.total_preprocessed,
+      'total_postprocessed': m['total_postprocessed']
+    }
+    for key in self.metrics:
+      if key in self.non_reset_metrics:
+        continue
+      self.metrics[key] = 0
+    return stats
+
+  def add(self, step, worker=0):
+    if worker != 0:
+      raise NotImplementedError('Multiple workers are currently not supported')
+
+    self.metrics['inserts'] += 1
+    self.total_preprocessed += 1
+
+    step = {k: v for k, v in step.items() if not k.startswith('log_')}
+    step['id'] = np.asarray(embodied.uuid(step.get('id')))
+
+    self.saver and self.saver.add(step, worker)
+    if self.first_add_call:
+      self.postprocess_handler.next_chunk_uuid = self.saver.buffers[0].uuid
+      self.first_add_call = False
+
+  def _sample(self):
+    # TODO: Add wait to sample when gap from pre to post processed is too
+    #       large.
+    dur = wait(self.limiter.want_sample, 'Replay sample is waiting')
+    self.metrics['samples'] += 1
+    self.metrics['sample_wait_dur'] += dur
+    self.metrics['sample_wait_count'] += int(dur > 0)
+
+    seq = self.table[self.sampler()]
+    seq = {k: [step[k] for step in seq] for k in seq[0]}
+    seq = {k: embodied.convert(v) for k, v in seq.items()}
+    if 'is_first' in seq:
+      seq['is_first'][0] = True
+    return seq
+
+  def _remove(self, key):
+    wait(self.limiter.want_remove, 'Replay remove is waiting')
+    del self.table[key]
+    del self.remover[key]
+    del self.sampler[key]
+
+  def dataset(self):
+    while True:
+      yield self._sample()
+
+  def prioritize(self, ids, prios):
+    if hasattr(self.sampler, 'prioritize'):
+      self.sampler.prioritize(ids, prios)
+
+  def save(self, wait=False):
+    self.saver.save(wait)
+
+  def load(self, data=None):
+    print('load called')
+    self.postprocess_handler.initial_load(
+        self.postprocess_directory, self.capacity, self.length)
+
+  def _add_step_from_post(self, step, worker, load=False):
+    stream = self.streams[worker]
+    stream.append(step)
+
+    if len(stream) < self.length:
+      return
+
+    key = embodied.uuid()
+    seq = tuple(stream)
+    if load:
+      assert self.limiter.want_load()[0]
+      self.total_preprocessed += 1
+    else:
+      dur = wait(self.limiter.want_insert, 'Replay insert is waiting')
+      self.metrics['postprocess_inserts'] += 1
+      self.metrics['postprocess_insert_wait_dur'] += dur
+      self.metrics['postprocess_insert_wait_count'] += int(dur > 0)
+    self.metrics['total_postprocessed'] += 1
+    self.table[key] = seq
+    self.remover[key] = seq
+    self.sampler[key] = seq
+
+    while self.capacity and len(self) > self.capacity:
+      self._remove(self.remover())
+
+
+class PostprocessedFileHandler(events.FileSystemEventHandler):
+  def __init__(self, add_chunk_callable):
+    self.add_chunk_callable = add_chunk_callable
+    self.next_chunk_uuid = None
+    self.loaded_chunks = {}
+
+  def initial_load(self, directory, capacity, length):
+    filenames = chunklib.Chunk.scan(directory, capacity, length - 1)
+
+    if not filenames:
+      return
+
+    with concurrent.futures.ThreadPoolExecutor(32) as load_executor:
+      chunks = list(load_executor.map(
+          chunklib.Chunk.load, filenames))
+      streamids = {}
+      for chunk in reversed(sorted(chunks, key=lambda x: x.time)):
+        if chunk.successor not in streamids:
+          streamids[chunk.uuid] = int(embodied.uuid())
+        else:
+          streamids[chunk.uuid] = streamids[chunk.successor]
+
+      for i, chunk in enumerate(chunks):
+        stream = streamids[chunk.uuid]
+        self.process_chunk(chunk, stream, load=True)
+        # Free memory early to not require twice the replay capacity.
+        chunks[i] = None
+        del chunk
+
+  def on_moved(self, event):
+    assert isinstance(event, events.FileMovedEvent)
+    assert self.next_chunk_uuid is not None, (
+        'Chunk UUID should have been set by now.')
+    chunk = chunklib.Chunk.load(pathlib.Path(event.dest_path))
+    self.loaded_chunks[chunk.uuid] = chunk
+    self.process_chunks()
+
+  def process_chunks(self):
+    while self.next_chunk_uuid in self.loaded_chunks:
+      chunk = self.loaded_chunks.pop(self.next_chunk_uuid)
+      if chunk.successor == str(embodied.uuid(0)):
+        continue  # These tiny chunks are created when saver calls.
+                  # They can be thrown away.
+      self.next_chunk_uuid = chunk.successor
+      self.process_chunk(chunk, 0)
+
+  def process_chunk(self, chunk, stream, load=False):
+    for index in range(chunk.length):
+      step = {k: v[index] for k, v in chunk.data.items()}
+      self.add_chunk_callable(step, stream, load=load)

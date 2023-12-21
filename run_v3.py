@@ -68,10 +68,17 @@ def main(argv=None):
     env = embodied.BatchEnv([env], parallel=False)
 
     agent = dreamerv3.Agent(env.obs_space, env.act_space, step, config)
-    replay = embodied.replay.Uniform(
-        config.batch_length, config.replay_size, logdir / 'replay')
 
-    embodied.run.train(agent, env, replay, logger, args)
+    if config.seg_with_sam:
+        replay = embodied.replay.UniformProcessed(
+            config.batch_length, config.replay_size,
+            logdir / 'preprocessed_replay',
+            logdir / 'postprocessed_replay')
+    else:
+        replay = embodied.replay.Uniform(
+            config.batch_length, config.replay_size, logdir / 'replay')
+
+    embodied.run.train(agent, env, replay, logger, args, config)
 
 
 if __name__ == '__main__':

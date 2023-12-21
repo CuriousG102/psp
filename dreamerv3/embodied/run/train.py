@@ -4,7 +4,7 @@ import embodied
 import numpy as np
 
 
-def train(agent, env, replay, logger, args):
+def train(agent, env, replay, logger, args, config=None):
 
   logdir = embodied.Path(args.logdir)
   logdir.mkdirs()
@@ -61,8 +61,13 @@ def train(agent, env, replay, logger, args):
 
   print('Prefill train dataset.')
   random_agent = embodied.RandomAgent(env.act_space)
-  while len(replay) < max(args.batch_steps, args.train_fill):
-    driver(random_agent.policy, steps=100)
+  def replay_length():
+    if config is not None and config.seg_with_sam:
+      return replay.len_after_postprocessing_completes()
+    else:
+      return len(replay)
+  while replay_length() < max(args.batch_steps, args.train_fill):
+      driver(random_agent.policy, steps=100)
   logger.add(metrics.result())
   logger.write()
 
