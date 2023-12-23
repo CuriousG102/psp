@@ -1,20 +1,26 @@
+import abc
 import argparse
 import concurrent.futures
 import glob
+import multiprocessing as mp
 import os
 import random
 import shutil
 import time
+import warnings
 
 import numpy as np
+from PIL import Image
+from transformers import pipeline
 from watchdog import events
 from watchdog import observers
 
 
-class SAMEmulatorFileCopier(events.FileSystemEventHandler):
-  _DELAY_MIN = 60 # seconds
-  _DELAY_MAX = 120 # seconds
-  _NUM_THREADS = 4 # Expected number of GPUS for the real thing.
+_MAX_MASKS = 500
+
+
+class FileProcessor(events.FileSystemEventHandler, abc.ABC):
+  _NUM_THREADS = 4  # Expected number of GPUs for the real thing.
 
   def __init__(self, preprocessed_directory, postprocessed_directory):
     self.preprocessed_directory = preprocessed_directory
@@ -25,24 +31,27 @@ class SAMEmulatorFileCopier(events.FileSystemEventHandler):
     return [
       os.path.basename(path) for path in glob.glob(os.path.join(dir, '*.npz'))]
 
-  def _copy_file_with_delay(self, src, dest):
-    time.sleep(random.uniform(self._DELAY_MIN, self._DELAY_MAX))
-    shutil.copy(src, dest + '.tmp')
-    shutil.move(dest + '.tmp', dest)
+  @abc.abstractmethod
+  def _process_file(self, src, dest):
+    """
+    Abstract method to process a file.
+    This needs to be implemented in the child class.
+    """
+    pass
 
   def initial_load(self):
-    preprocessed_files = set(self._get_all_files_in_dir(
-      self.preprocessed_directory))
-    postprocessed_files = set(self._get_all_files_in_dir(
-      self.postprocessed_directory))
+    preprocessed_files = set(
+      self._get_all_files_in_dir(self.preprocessed_directory))
+    postprocessed_files = set(
+      self._get_all_files_in_dir(self.postprocessed_directory))
     unprocessed_files = preprocessed_files - postprocessed_files
     tasks = []
     for file in unprocessed_files:
       src_path = os.path.join(self.preprocessed_directory, file)
       dst_path = os.path.join(self.postprocessed_directory, file)
       print(f'enqueuing {file}')
-      tasks.append(self.executor.submit(
-        self._copy_file_with_delay, src_path, dst_path))
+      tasks.append(
+        self.executor.submit(self._process_file, src_path, dst_path))
 
     for task in tasks:
       task.result()
@@ -52,8 +61,77 @@ class SAMEmulatorFileCopier(events.FileSystemEventHandler):
     file_name = os.path.basename(event.src_path)
     print(f'enqueuing {file_name}')
     self.executor.submit(
-      self._copy_file_with_delay, event.src_path,
+      self._process_file, event.src_path,
       os.path.join(self.postprocessed_directory, file_name))
+
+
+class SAMEmulatorFileProcessor(FileProcessor):
+  _DELAY_MIN = 15  # seconds
+  _DELAY_MAX = 30  # seconds
+
+  def _process_file(self, src, dest):
+    time.sleep(random.uniform(self._DELAY_MIN, self._DELAY_MAX))
+    shutil.copy(src, dest + '.tmp')
+    shutil.move(dest + '.tmp', dest)
+
+
+def _pad_masks(masks, max_masks):
+  padded_masks = np.zeros((max_masks, *masks[0].shape), dtype=masks[0].dtype)
+  padded_masks[:len(masks)] = masks
+  return padded_masks
+
+
+def _setup_pipeline(gpu_indices: mp.Queue, src_dest_queue: mp.Queue):
+  os.environ['CUDA_VISIBLE_DEVICES'] = gpu_indices.get()
+  generator = pipeline(
+      'mask-generation', model='facebook/sam-vit-base')
+
+  while True:
+    src, dest = src_dest_queue.get()
+
+    # Suppressing specific warning
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore")
+      chunk = np.load(src)
+
+      # Generate masks for all images in a batch
+      images = [Image.fromarray(image) for image in chunk['images']]
+      batch_outputs = generator(
+          images, pred_iou_thresh=.75, stability_score_thresh=.75,
+          points_per_crop=16)
+
+      # Pad masks and prepare for saving
+      masks_count = []
+      padded_masks_list = []
+      for output in batch_outputs:
+        masks = np.array(output['masks'])
+        masks_count.append(len(masks))
+        padded_masks = _pad_masks(masks, _MAX_MASKS)
+        padded_masks_list.append(padded_masks)
+
+      # Stack and save the masks
+      all_masks = np.stack(padded_masks_list)
+      masks_count_array = np.array(masks_count)
+      np.savez_compressed(dest, **chunk, masks=all_masks,
+                          masks_count=masks_count_array)
+
+
+class SamFileProcessor(FileProcessor):
+  def __init__(self, gpu_indices, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._gpu_queue = mp.Queue()
+    for idx in gpu_indices:
+      self._gpu_queue.put(idx)
+    self._src_dest_queue = mp.Queue()
+    self.processes = [mp.Process(
+      target=_setup_pipeline, args=(self._gpu_queue, self._src_dest_queue))
+      for _ in gpu_indices
+    ]
+    for process in self.processes:
+      process.start()
+
+  def _process_file(self, src, dest):
+    self._src_dest_queue.put((src, dest))
 
 
 def main():
@@ -63,6 +141,12 @@ def main():
                 'the images.')
   parser.add_argument(
     '--logdir', required=True, help='Directory for log files')
+  parser.add_argument(
+      '--mode', required=True, help='Mode to operate in'
+  )
+  parser.add_argument(
+    '--gpus', help='GPUs to use.', default='0'
+  )
 
   args = parser.parse_args()
 
@@ -84,8 +168,15 @@ def main():
     print(f'Specified postprocessed directory does not exist.')
     return
 
-  sam_handler = SAMEmulatorFileCopier(
-      preprocessed_replay_path, postprocessed_replay_path)
+  if args.mode == 'emulate':
+    sam_handler = SAMEmulatorFileProcessor(
+        preprocessed_replay_path, postprocessed_replay_path)
+  elif args.mode == 'sam':
+    sam_handler = SamFileProcessor(
+        args.gpus.split(','),
+        preprocessed_replay_path, postprocessed_replay_path)
+  else:
+    raise ValueError('Mode must be either emulate or sam')
   sam_handler.initial_load()
   observer = observers.Observer()
   observer.schedule(
