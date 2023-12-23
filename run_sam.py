@@ -82,9 +82,10 @@ def _pad_masks(masks, max_masks):
 
 
 def _setup_pipeline(gpu_indices: mp.Queue, src_dest_queue: mp.Queue):
-  os.environ['CUDA_VISIBLE_DEVICES'] = gpu_indices.get()
+  # os.environ['CUDA_VISIBLE_DEVICES'] = gpu_indices.get()
+  gpu = gpu_indices.get()
   generator = pipeline(
-      'mask-generation', model='facebook/sam-vit-base')
+      'mask-generation', model='facebook/sam-vit-base', device=gpu)
 
   while True:
     src, dest = src_dest_queue.get()
@@ -95,7 +96,7 @@ def _setup_pipeline(gpu_indices: mp.Queue, src_dest_queue: mp.Queue):
       chunk = np.load(src)
 
       # Generate masks for all images in a batch
-      images = [Image.fromarray(image) for image in chunk['images']]
+      images = [Image.fromarray(image) for image in chunk['image']]
       batch_outputs = generator(
           images, pred_iou_thresh=.75, stability_score_thresh=.75,
           points_per_crop=16)
@@ -173,7 +174,7 @@ def main():
         preprocessed_replay_path, postprocessed_replay_path)
   elif args.mode == 'sam':
     sam_handler = SamFileProcessor(
-        args.gpus.split(','),
+        [int(i) for i in args.gpus.split(',')],
         preprocessed_replay_path, postprocessed_replay_path)
   else:
     raise ValueError('Mode must be either emulate or sam')
