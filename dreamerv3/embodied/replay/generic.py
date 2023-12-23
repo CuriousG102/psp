@@ -220,7 +220,7 @@ class GenericProcessed:
 
   def process_pending_not_too_large(self):
     if (
-        (self.total_postprocesed - self.total_preprocessed)
+        (self.total_preprocessed - self.total_postprocesed)
         // self.length <= self.max_chunks_behind):
       return True, 'Not too far behind'
     else:
