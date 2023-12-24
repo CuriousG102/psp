@@ -356,6 +356,13 @@ class WorldModel(nj.Module):
                 1 - self.config.image_v_grad_interp_value)
             + weights * self.config.image_v_grad_interp_value)
 
+        if self.config.image_v_grad_percentile_clip:
+          p95 = jnp.percentile(weights, 95)
+          weights = jnp.where(weights > p95, p95, weights)
+
+        if self.config.image_v_grad_normed:
+          weights /= jnp.sum(weights, axis=-1, keepdims=True)
+
         warmup = self.config.v_grad_warmup_steps
         if warmup > 0:
           weights_scale = jnp.minimum(data['step'] / warmup, 1)
@@ -363,15 +370,8 @@ class WorldModel(nj.Module):
           weights_scale = jnp.ones_like(data['step'])
 
         weights = (
-                jnp.ones_like(weights) * (1 - weights_scale)
-                + weights * weights_scale)
-
-        if self.config.image_v_grad_percentile_clip:
-          p95 = jnp.percentile(weights, 95)
-          weights = jnp.where(weights > p95, p95, weights)
-
-        if self.config.image_v_grad_normed:
-          weights /= jnp.sum(weights, axis=-1, keepdims=True)
+            jnp.ones_like(weights) * (1 - weights_scale)
+            + weights * weights_scale)
 
         pred = dist.mean()
         loss = (pred - data[key].astype(jnp.float32)) ** 2
