@@ -1,5 +1,7 @@
 import warnings
 
+import numpy as np
+
 import dreamerv3
 from dreamerv3 import embodied
 from dreamerv3.embodied.envs import color_dmc
@@ -34,6 +36,13 @@ def main(argv=None):
     ])
 
     if config.environment == 'dmc':
+        if config.image_v_grad_mask_level:
+            mask_spaces = {
+                'masks': embodied.Space(np.bool_, (500,) + config.env.dmc.size),
+                'masks_count': embodied.Space(np.int32, ()),
+            }
+        else:
+            mask_spaces = None
         env = color_dmc.DMC(
             config.task,
             repeat=config.env.dmc.repeat,
@@ -52,6 +61,7 @@ def main(argv=None):
                 config.evil.action_splits if config.evil.action_power < 0
                 else None),
             natural_video_dir=config.evil.natural_video_dir,
+            mask_spaces=mask_spaces,
         )
     elif config.environment == 'rlbench':
         from dreamerv3.embodied.envs import rlbench

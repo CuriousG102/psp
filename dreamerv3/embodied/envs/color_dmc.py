@@ -29,6 +29,7 @@ class DMC(embodied.Env):
           action_splits=None,
           include_foreground_mask=False,
           natural_video_dir=None,
+          mask_spaces=None
   ):
     # TODO: This env variable is meant for headless GPU machines but may fail
     # on CPU-only machines.
@@ -66,6 +67,7 @@ class DMC(embodied.Env):
     self._evil_level = evil_level
     self._step = 0
     self._include_foreground_mask = include_foreground_mask
+    self._mask_spaces = mask_spaces
 
 
   @functools.cached_property
@@ -73,6 +75,8 @@ class DMC(embodied.Env):
     spaces = self._env.obs_space.copy()
     if self._render:
       spaces['image'] = embodied.Space(np.uint8, self._size + (3,))
+    if self._mask_spaces:
+      spaces.update(self._mask_spaces)
     return spaces
 
   @functools.cached_property
