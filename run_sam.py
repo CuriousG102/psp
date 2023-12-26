@@ -56,12 +56,12 @@ class FileProcessor(events.FileSystemEventHandler, abc.ABC):
     for task in tasks:
       task.result()
 
-  def on_created(self, event):
-    assert isinstance(event, events.FileCreatedEvent)
-    file_name = os.path.basename(event.src_path)
+  def on_moved(self, event):
+    assert isinstance(event, events.FileMovedEvent)
+    file_name = os.path.basename(event.dest_path)
     print(f'enqueuing {file_name}')
     self.executor.submit(
-      self._process_file, event.src_path,
+      self._process_file, event.dest_path,
       os.path.join(self.postprocessed_directory, file_name))
 
 
@@ -113,8 +113,9 @@ def _setup_pipeline(gpu_indices: mp.Queue, src_dest_queue: mp.Queue):
       # Stack and save the masks
       all_masks = np.stack(padded_masks_list)
       masks_count_array = np.array(masks_count)
-      np.savez_compressed(dest, **chunk, masks=all_masks,
+      np.savez_compressed(dest.replace('.npz', 'tmp.npz'), **chunk, masks=all_masks,
                           masks_count=masks_count_array)
+      shutil.move(dest.replace('.npz', 'tmp.npz'), dest)
 
 
 class SamFileProcessor(FileProcessor):

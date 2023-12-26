@@ -1,5 +1,6 @@
 import io
 from datetime import datetime
+import shutil
 
 import embodied
 import numpy as np
@@ -44,12 +45,14 @@ class Chunk:
     succ = self.successor or str(embodied.uuid(0))
     succ = succ.uuid if isinstance(succ, type(self)) else succ
     filename = f'{self.time}-{self.uuid}-{succ}-{self.length}.npz'
+    tmp_filename = embodied.Path(directory) / (filename + '.tmp')
     filename = embodied.Path(directory) / filename
     data = {k: embodied.convert(v) for k, v in self.data.items()}
     with io.BytesIO() as stream:
       np.savez_compressed(stream, **data)
       stream.seek(0)
-      filename.write(stream.read(), mode='wb')
+      tmp_filename.write(stream.read(), mode='wb')
+    shutil.move(str(tmp_filename), str(filename))
     print(f'Saved chunk: {filename.name}')
 
   @classmethod
