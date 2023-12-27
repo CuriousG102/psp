@@ -64,6 +64,7 @@ def main(argv=None):
             mask_spaces=mask_spaces,
         )
     elif config.environment == 'rlbench':
+        # TODO: Add support for mask spaces to RLBench as well.
         from dreamerv3.embodied.envs import rlbench
         env = rlbench.RLBench(
             config.task,

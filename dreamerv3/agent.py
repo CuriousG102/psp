@@ -194,7 +194,7 @@ class Agent(nj.Module):
         continue
       if len(value.shape) > 3 and value.dtype == jnp.uint8:
         value = jaxutils.cast_to_compute(value) / 255.0
-      else:
+      elif key != 'masks'and key != 'masks_count':
         value = value.astype(jnp.float32)
       obs[key] = value
     obs['cont'] = 1.0 - obs['is_terminal'].astype(jnp.float32)
@@ -348,9 +348,35 @@ class WorldModel(nj.Module):
         percentile_clip=self.config.latent_v_grad_percentile_clip)
     for key, dist in dists.items():
       if image_v_grad is not None and key in self.encoder.cnn_shapes:
-        weights = jnp.abs(image_v_grad[key]) + 1e-6  # [L, H, W, C]
+        # Get absolute value of gradients of value (or reward) wrt each image
+        # pixel/channel, plus a small value epsilon in some cases, as initial
+        # version of weights.
+        weights = jnp.abs(image_v_grad[key])  # [L, H, W, C]
+        if self.config.image_v_grad_normed:
+          weights += 1e-6
         if self.config.image_v_grad_x_intensity:
           weights *= data[key]
+
+        # masks_count = data['masks_count']  # [L,]
+        if self.config.image_v_grad_mask_level:
+          masks = data['masks']  # [L, M, H, W]
+          neg_mask = ~jnp.any(masks, axis=1, keepdims=True)  # [L, 1, H, W]
+          masks = jnp.concatenate([masks, neg_mask], axis=1)
+          p99 = jnp.percentile(weights, 99)
+          numerator = jnp.clip(weights, 0, p99)
+          numerator = (  # [L, M, H, W, C]
+            numerator[:, None, ...]  # [L, 1, H, W, C]
+            * masks[..., None]  # [L, M, H, W, 1]
+          )
+          mask_scores = (  # [L, M]
+            numerator.sum((-1, -2, -3))  # [L, M, H, W, C] -> [L, M]
+            / masks.sum((-1, -2))  # [L, M, H, W] -> [L, M]
+          )
+          mask_scores = jnp.nan_to_num(mask_scores)  # [L, M]
+          weights = mask_scores[..., None, None] * masks  # [L, M, H, W]
+          weights = weights.sum(axis=1)  # [L, H, W]
+          weights = weights[..., None]  # [L, H, W, 1], last dim replaces C.
+
         weights = (
             jnp.ones_like(weights) * (
                 1 - self.config.image_v_grad_interp_value)
@@ -379,6 +405,7 @@ class WorldModel(nj.Module):
         original_loss = loss
         loss = weights * loss
         if self.config.image_v_grad_norm_keep_magnitude:
+          # TODO: Reading this with a fresh mind, I'm pretty sure it's broken.
           loss *= (
               jnp.sum(original_loss, axis=-1, keepdims=True)
               / jnp.sum(loss, axis=-1, keepdims=True)
@@ -433,7 +460,7 @@ class WorldModel(nj.Module):
      gradients_dict) = per_item_loss(data, state)
 
     metrics = self._metrics(data, post, prior, losses, model_loss, gradients_dict)
-    return model_loss.mean(), (state, out, metrics)
+    return model_loss.mean(), (state, out, gradients_dict, metrics,)
 
   def imagine(self, policy, start, horizon):
     first_cont = (1.0 - start['is_terminal']).astype(jnp.float32)
@@ -457,7 +484,8 @@ class WorldModel(nj.Module):
   def report(self, data, vf):
     state = self.initial(len(data['is_first']))
     report = {}
-    report.update(self.loss(data, state, vf)[-1][-1])
+    _, (_, _, gradients_dict, metrics) = self.loss(data, state, vf)
+    report.update(metrics)
     context, _ = self.rssm.observe(
         self.encoder(data)[:6, :5], data['action'][:6, :5],
         data['is_first'][:6, :5])
@@ -470,6 +498,22 @@ class WorldModel(nj.Module):
       model = jnp.concatenate([recon[key].mode()[:, :5], openl[key].mode()], 1)
       error = (model - truth + 1) / 2
       video = jnp.concatenate([truth, model, error], 2)
+      if 'scaled_image_weight' in gradients_dict:
+        scaled = (
+          gradients_dict['scaled_image_weight'][:6].sum(axis=-1)
+        )
+        weighting = jnp.ones_like(scaled, shape=scaled.shape + (3,))
+        weighting[..., 0] = scaled
+        video = jnp.concatenate([video, weighting], axis=2)
+      if 'masks' in data:
+        masks = data['masks']  # [B, L, M, H, W]
+        colors = jax.random.uniform(
+            nj.rng(), jnp.shape(masks)[:3] + (3,))  # [B, L, M, C]
+        masks = masks[..., None]  # [B, L, M, H, W, 1]
+        masks = masks * colors[:, :, :, None, None, :]  # [B, L, M, H, W, C]
+        masks = masks.sum(axis=2)  # [B, L, H, W, C]
+        video = jnp.concatenate([video, masks], axis=2)
+      # TODO: Add visualization of SAM masks.
       report[f'openl_{key}'] = jaxutils.video_grid(video)
     return report
 
