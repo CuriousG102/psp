@@ -502,7 +502,7 @@ class WorldModel(nj.Module):
         scaled = (
           gradients_dict['scaled_image_weight'][:6].sum(axis=-1)
         )
-        weighting = jnp.ones_like(scaled, shape=scaled.shape + (3,))
+        weighting = jnp.zeros_like(scaled, shape=scaled.shape + (3,))
         weighting[..., 0] = scaled
         video = jnp.concatenate([video, weighting], axis=2)
       if 'masks' in data:
@@ -513,7 +513,6 @@ class WorldModel(nj.Module):
         masks = masks * colors[:, :, :, None, None, :]  # [B, L, M, H, W, C]
         masks = masks.sum(axis=2)  # [B, L, H, W, C]
         video = jnp.concatenate([video, masks], axis=2)
-      # TODO: Add visualization of SAM masks.
       report[f'openl_{key}'] = jaxutils.video_grid(video)
     return report
 
