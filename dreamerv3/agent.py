@@ -235,7 +235,7 @@ class WorldModel(nj.Module):
 
   def train(self, data, state, vf):
     modules = [self.encoder, self.rssm, *self.heads.values()]
-    mets, (state, outs, metrics) = self.opt(
+    mets, (state, outs, _, metrics) = self.opt(
         modules, self.loss, data, state, vf, has_aux=True)
     metrics.update(mets)
     return state, outs, metrics
@@ -502,18 +502,18 @@ class WorldModel(nj.Module):
         scaled = (
           gradients_dict['scaled_image_weight'][:6].sum(axis=-1)
         )
-        weighting = jnp.ones_like(scaled, shape=scaled.shape + (3,))
-        weighting[..., 0] = scaled
+        weighting = jnp.zeros_like(scaled, shape=scaled.shape + (3,))
+        weighting = weighting.at[..., 0].set(scaled)
+        weighting = (weighting - weighting.min()) / (weighting.max() - weighting.min())
         video = jnp.concatenate([video, weighting], axis=2)
       if 'masks' in data:
-        masks = data['masks']  # [B, L, M, H, W]
+        masks = data['masks'][:6]  # [B, L, M, H, W]
         colors = jax.random.uniform(
             nj.rng(), jnp.shape(masks)[:3] + (3,))  # [B, L, M, C]
         masks = masks[..., None]  # [B, L, M, H, W, 1]
         masks = masks * colors[:, :, :, None, None, :]  # [B, L, M, H, W, C]
         masks = masks.sum(axis=2)  # [B, L, H, W, C]
         video = jnp.concatenate([video, masks], axis=2)
-      # TODO: Add visualization of SAM masks.
       report[f'openl_{key}'] = jaxutils.video_grid(video)
     return report
 

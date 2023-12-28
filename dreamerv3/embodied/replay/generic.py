@@ -299,6 +299,8 @@ class GenericProcessed:
 
   def load(self, data=None):
     print('load called')
+    # TODO: Move this around so we don't waste space/time collecting new
+    #       episodes because replay looks empty at the beginning.
     self.postprocess_handler.initial_load(
         self.postprocess_directory, self.capacity, self.length)
 
@@ -345,6 +347,9 @@ class PostprocessedFileHandler(events.FileSystemEventHandler):
           chunklib.Chunk.load, filenames))
       streamids = {}
       for chunk in reversed(sorted(chunks, key=lambda x: x.time)):
+        if chunk.successor == str(embodied.uuid(0)):
+          continue  # These tiny chunks are created when saver calls.
+                    # They can be thrown away.
         if chunk.successor not in streamids:
           streamids[chunk.uuid] = int(embodied.uuid())
         else:

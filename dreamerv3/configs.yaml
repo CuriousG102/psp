@@ -409,6 +409,10 @@ image_value_gradient:
 image_value_gradient_x_intensity:
   image_v_grad_x_intensity: true
 
+image_value_gradient_smooth_with_sam:
+  image_v_grad_mask_level: true
+  seg_with_sam: true
+
 image_value_gradient_normed:
   image_v_grad_normed: true
 
