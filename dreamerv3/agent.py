@@ -377,10 +377,21 @@ class WorldModel(nj.Module):
           weights = weights.sum(axis=1)  # [L, H, W]
           weights = weights[..., None]  # [L, H, W, 1], last dim replaces C.
 
-        weights = (
-            jnp.ones_like(weights) * (
-                1 - self.config.image_v_grad_interp_value)
-            + weights * self.config.image_v_grad_interp_value)
+        if self.config.image_v_grad_interp_value != 1.:
+          original_weight_sum = jnp.prod(jnp.array(weights.shape[-3:]))
+          weights = (
+              weights  # [L, H, W, C]
+              * (  # [L, 1, 1, 1]
+                  original_weight_sum  # [1,]
+                  / weights.sum((-1, -2, -3))  # [L,]
+              )[:, None, None, None]
+          )
+          weights = (
+              jnp.ones_like(weights) * (
+                  1 - self.config.image_v_grad_interp_value
+              )
+              + weights * self.config.image_v_grad_interp_value
+          )
 
         if self.config.image_v_grad_percentile_clip:
           p95 = jnp.percentile(weights, 95)
