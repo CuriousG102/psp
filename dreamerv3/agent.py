@@ -514,6 +514,7 @@ class WorldModel(nj.Module):
         masks = masks * colors[:, :, :, None, None, :]  # [B, L, M, H, W, C]
         masks = masks.sum(axis=2)  # [B, L, H, W, C]
         video = jnp.concatenate([video, masks], axis=2)
+      # TODO: Add visualization of SAM masks.
       report[f'openl_{key}'] = jaxutils.video_grid(video)
     return report
 
