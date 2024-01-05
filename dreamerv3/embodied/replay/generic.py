@@ -276,7 +276,7 @@ class GenericProcessed:
     seq = self.table[self.sampler()]
     seq = {
         k: [
-            np.unpackbits(step[k]).astype(np.bool_) if k == 'mask' else step[k]
+            np.unpackbits(step[k], axis=-1).astype(np.bool_) if k == 'mask' else step[k]
             for step in seq
         ]
         for k in seq[0]
@@ -309,7 +309,8 @@ class GenericProcessed:
   def _add_step_from_post(self, step, worker, load=False):
     stream = self.streams[worker]
     if 'masks' in step:
-      step['masks'] = np.packbits(step['masks'])
+      assert step['masks'].shape[-1] % 8 == 0
+      step['masks'] = np.packbits(step['masks'], axis=-1)
     stream.append(step)
 
     if len(stream) < self.length:
