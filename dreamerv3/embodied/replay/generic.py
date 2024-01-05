@@ -264,8 +264,6 @@ class GenericProcessed:
       self.first_add_call = False
 
   def _sample(self):
-    # TODO: Add wait to sample when gap from pre to post processed is too
-    #       large.
     dur = wait(self.limiter.want_sample, 'Replay sample is waiting')
     wait(self.process_pending_not_too_large,
          'Waiting for more examples to be processed')
@@ -274,7 +272,13 @@ class GenericProcessed:
     self.metrics['sample_wait_count'] += int(dur > 0)
 
     seq = self.table[self.sampler()]
-    seq = {k: [step[k] for step in seq] for k in seq[0]}
+    seq = {
+        k: [
+            np.unpackbits(step[k]).astype(np.bool_) if k == 'mask' else step[k]
+            for step in seq
+        ]
+        for k in seq[0]
+    }
     seq = {k: embodied.convert(v) for k, v in seq.items()}
     if 'is_first' in seq:
       seq['is_first'][0] = True
@@ -306,6 +310,8 @@ class GenericProcessed:
 
   def _add_step_from_post(self, step, worker, load=False):
     stream = self.streams[worker]
+    if 'masks' in step:
+      step['masks'] = np.packbits(step['masks'])
     stream.append(step)
 
     if len(stream) < self.length:
