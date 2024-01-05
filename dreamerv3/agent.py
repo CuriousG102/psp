@@ -383,8 +383,8 @@ class WorldModel(nj.Module):
               weights  # [L, H, W, C]
               * (  # [L, 1, 1, 1]
                   original_weight_sum  # [1,]
-                  / weights.sum((-1, -2, -3))  # [L,]
-              )[:, None, None, None]
+                  / weights.sum((-1, -2, -3), keepdims=True)  # [L, 1, 1, 1]
+              )
           )
           frame_nans = jnp.any(
               jnp.isnan(weights), (-1, -2, -3), keepdims=True) # [L, 1, 1, 1]
