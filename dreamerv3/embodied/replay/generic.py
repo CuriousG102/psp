@@ -348,6 +348,8 @@ class PostprocessedFileHandler(events.FileSystemEventHandler):
       return
 
     with concurrent.futures.ThreadPoolExecutor(32) as load_executor:
+      # TODO: Do the bitpacking here so we don't pile up stuff until we get
+      #  the first chunk, on initial load.
       chunks = list(load_executor.map(
           chunklib.Chunk.load, filenames))
       streamids = {}
@@ -368,6 +370,8 @@ class PostprocessedFileHandler(events.FileSystemEventHandler):
     assert isinstance(event, events.FileMovedEvent)
     assert self.next_chunk_uuid is not None, (
         'Chunk UUID should have been set by now.')
+    # TODO: Do the bitpacking here so we don't pile up stuff until we get
+    #  the first chunk, on initial load.
     chunk = chunklib.Chunk.load(pathlib.Path(event.dest_path))
     self.loaded_chunks[chunk.uuid] = chunk
     self.process_chunks()
