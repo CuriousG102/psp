@@ -276,7 +276,7 @@ class GenericProcessed:
     seq = self.table[self.sampler()]
     seq = {
         k: [
-            np.unpackbits(step[k], axis=-1).astype(np.bool_) if k == 'mask' else step[k]
+            np.unpackbits(step[k], axis=-1).astype(np.bool_) if k == 'masks' else step[k]
             for step in seq
         ]
         for k in seq[0]
