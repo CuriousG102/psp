@@ -33,6 +33,7 @@ class JAXAgent(embodied.Agent):
     self.rng = np.random.default_rng(config.seed)
 
     available = jax.devices(self.config.platform)
+    print(available)
     self.policy_devices = [available[i] for i in self.config.policy_devices]
     self.train_devices = [available[i] for i in self.config.train_devices]
     self.single_device = (self.policy_devices == self.train_devices) and (

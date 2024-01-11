@@ -16,7 +16,7 @@ from watchdog import events
 from watchdog import observers
 
 
-_MAX_MASKS = 500
+_MAX_MASKS = 100
 
 
 class FileProcessor(events.FileSystemEventHandler, abc.ABC):
@@ -77,7 +77,7 @@ class SAMEmulatorFileProcessor(FileProcessor):
 
 def _pad_masks(masks, max_masks):
   padded_masks = np.zeros((max_masks, *masks[0].shape), dtype=masks[0].dtype)
-  padded_masks[:len(masks)] = masks
+  padded_masks[:min(len(masks), max_masks)] = masks[:max_masks]
   return padded_masks
 
 
@@ -106,7 +106,7 @@ def _setup_pipeline(gpu_indices: mp.Queue, src_dest_queue: mp.Queue):
       padded_masks_list = []
       for output in batch_outputs:
         masks = np.array(output['masks'])
-        masks_count.append(len(masks))
+        masks_count.append(min(len(masks), _MAX_MASKS))
         padded_masks = _pad_masks(masks, _MAX_MASKS)
         padded_masks_list.append(padded_masks)
 

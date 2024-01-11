@@ -387,7 +387,7 @@ class WorldModel(nj.Module):
               )
           )
           frame_nans = jnp.any(
-              jnp.isnan(weights), (-1, -2, -3), keepdims=True) # [L, 1, 1, 1]
+              ~jnp.isfinite(weights), (-1, -2, -3), keepdims=True)  # [L, 1, 1, 1]
           weights = jnp.where(frame_nans, 1., weights)
           weights = (
               jnp.ones_like(weights) * (
