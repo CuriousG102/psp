@@ -2,11 +2,13 @@ import abc
 import argparse
 import concurrent.futures
 import glob
+import logging
 import multiprocessing as mp
 import os
 import random
 import shutil
 import time
+import traceback
 import warnings
 
 import numpy as np
@@ -97,9 +99,13 @@ def _setup_pipeline(gpu_indices: mp.Queue, src_dest_queue: mp.Queue):
 
       # Generate masks for all images in a batch
       images = [Image.fromarray(image) for image in chunk['image']]
-      batch_outputs = generator(
-          images, pred_iou_thresh=.75, stability_score_thresh=.75,
-          points_per_crop=16)
+      try:
+        batch_outputs = generator(
+            images, pred_iou_thresh=.75, stability_score_thresh=.75,
+            points_per_crop=16)
+      except Exception:
+        logging.error(f"Can't process {src}: {traceback.format_exc()}")
+        continue
 
       # Pad masks and prepare for saving
       masks_count = []
