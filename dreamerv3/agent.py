@@ -217,8 +217,15 @@ class WorldModel(nj.Module):
       train_image_augmentation_std=config.image_augmentation.std,
       name='enc')
     self.rssm = nets.RSSM(**config.rssm, name='rssm')
+    decoder_shapes = shapes.copy()
+    decoder_config = config.decoder
+    if self.config.adversarial_action_head:
+      decoder_shapes['action'] = tuple(self.act_space.shape)
+      # Make this less hacky.
+      decoder_config = decoder_config.update({'mlp_keys': 'action'})
     self.heads = {
-        'decoder': nets.MultiDecoder(shapes, **config.decoder, name='dec'),
+        'decoder': nets.MultiDecoder(
+          decoder_shapes, **decoder_config, name='dec'),
         'reward': nets.MLP((), **config.reward_head, name='rew'),
         'cont': nets.MLP((), **config.cont_head, name='cont')}
     self.opt = jaxutils.Optimizer(name='model_opt', **config.model_opt)
@@ -235,8 +242,15 @@ class WorldModel(nj.Module):
 
   def train(self, data, state, vf):
     modules = [self.encoder, self.rssm, *self.heads.values()]
+
+    adv_modules = None
+    adv_lossfn = None
+    if self.config.adversarial_action_head:
+      adv_modules = [self.encoder, self.rssm]
+      adv_lossfn = functools.partial(self.loss, act_adv_round=True)
     mets, (state, outs, _, metrics) = self.opt(
-        modules, self.loss, data, state, vf, has_aux=True)
+        modules, self.loss, data, state, vf, has_aux=True,
+        adv_modules=adv_modules, adv_lossfn=adv_lossfn)
     metrics.update(mets)
     return state, outs, metrics
 
@@ -257,7 +271,7 @@ class WorldModel(nj.Module):
     post, (embed, prior) = self.get_embed_post_prior(d_data, data, state)
     return vf(post).mean() if vf is not None else None, (embed, post, prior,)
 
-  def per_item_loss(self, data, state, vf):
+  def per_item_loss(self, data, state, vf, act_adv_round=False, adv_scale=None):
     """
     World Model loss
 
@@ -334,18 +348,19 @@ class WorldModel(nj.Module):
         lambda x: tree_map(jnp.ones_like, x),
         latent_v_grad
       )
-    losses['dyn'] = self.rssm.dyn_loss(
-        post, prior, **self.config.dyn_loss,
-        weight=rssm_loss_weight if self.config.dyn_v_grad else None,
-        normed=self.config.latent_v_grad_normed,
-        keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude,
-        percentile_clip=self.config.latent_v_grad_percentile_clip)
-    losses['rep'] = self.rssm.rep_loss(
-        post, prior, **self.config.rep_loss,
-        weight=rssm_loss_weight if self.config.rep_v_grad else None,
-        normed=self.config.latent_v_grad_normed,
-        keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude,
-        percentile_clip=self.config.latent_v_grad_percentile_clip)
+    if not act_adv_round:
+      losses['dyn'] = self.rssm.dyn_loss(
+          post, prior, **self.config.dyn_loss,
+          weight=rssm_loss_weight if self.config.dyn_v_grad else None,
+          normed=self.config.latent_v_grad_normed,
+          keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude,
+          percentile_clip=self.config.latent_v_grad_percentile_clip)
+      losses['rep'] = self.rssm.rep_loss(
+          post, prior, **self.config.rep_loss,
+          weight=rssm_loss_weight if self.config.rep_v_grad else None,
+          normed=self.config.latent_v_grad_normed,
+          keep_magnitude=self.config.latent_v_grad_norm_keep_magnitude,
+          percentile_clip=self.config.latent_v_grad_percentile_clip)
     for key, dist in dists.items():
       if image_v_grad is not None and key in self.encoder.cnn_shapes:
         # Get absolute value of gradients of value (or reward) wrt each image
@@ -430,9 +445,19 @@ class WorldModel(nj.Module):
             (-1, -2, -3)
         )
       else:
-        loss = -dist.log_prob(data[key].astype(jnp.float32))
+        # TODO: I think this is the right way to do it?
+        if key == 'action':
+          prev_latent, prev_action = state
+          truth = jnp.concatenate([
+              prev_action[None], data['action'][:-1]], 0)
+        else:
+          truth = data[key]
+        loss = -dist.log_prob(truth.astype(jnp.float32))
       assert loss.shape == embed.shape[:1], (key, loss.shape)
-      losses[key] = loss
+      if not act_adv_round or key == 'action':
+        losses[key] = loss
+        if key == 'action':
+         losses[key] *= self.config.adversarial_action_head_scale
     scaled = {k: v * self.scales[k] for k, v in losses.items()}
     model_loss = sum(scaled.values())
     out = {'embed': embed, 'post': post, 'prior': prior}
@@ -455,7 +480,7 @@ class WorldModel(nj.Module):
     return (data, post, prior, losses, model_loss, state, out,
             gradients_dict)
 
-  def loss(self, data, state, vf):
+  def loss(self, data, state, vf, act_adv_round=False):
     """
     World Model loss
 
@@ -469,7 +494,9 @@ class WorldModel(nj.Module):
     :return:
     """
     per_item_loss = jax.vmap(
-        functools.partial(self.per_item_loss, vf=vf), in_axes=[0, 0])
+        functools.partial(
+          self.per_item_loss, vf=vf, act_adv_round=act_adv_round),
+          in_axes=[0, 0])
     (data, post, prior, losses, model_loss, state, out,
      gradients_dict) = per_item_loss(data, state)
 

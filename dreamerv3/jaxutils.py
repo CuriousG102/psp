@@ -386,26 +386,51 @@ class Optimizer(nj.Module):
       self.good_steps = nj.Variable(
           jnp.array, 0, jnp.int32, name='good_steps')
 
-  def __call__(self, modules, lossfn, *args, has_aux=False, **kwargs):
-    def wrapped(*args, **kwargs):
-      outs = lossfn(*args, **kwargs)
-      loss, aux = outs if has_aux else (outs, None)
-      assert loss.dtype == jnp.float32, (self.name, loss.dtype)
-      assert loss.shape == (), (self.name, loss.shape)
-      if self.scaling:
-        loss *= sg(self.grad_scale.read())
-      return loss, aux
+  def __call__(
+      self, modules, lossfn, *args,
+      has_aux=False, adv_modules=None, adv_lossfn=None, **kwargs):
+    def gen_wrapped(lossfn_):
+      def wrapped(*args, **kwargs):
+        outs = lossfn_(*args, **kwargs)
+        loss, aux = outs if has_aux else (outs, None)
+        assert loss.dtype == jnp.float32, (self.name, loss.dtype)
+        assert loss.shape == (), (self.name, loss.shape)
+        if self.scaling:
+          loss *= sg(self.grad_scale.read())
+        return loss, aux
+      return wrapped
     metrics = {}
     loss, params, grads, aux = nj.grad(
-        wrapped, modules, has_aux=True)(*args, **kwargs)
+        gen_wrapped(lossfn), modules, has_aux=True)(*args, **kwargs)
+    adv_loss, adv_params, adv_grads, adv_aux = None, None, None, None
+    adv = adv_modules and adv_lossfn
+    if adv:
+      adv_loss, adv_params, adv_grads, adv_aux = nj.grad(
+        gen_wrapped(adv_lossfn), adv_modules, has_aux=True)(*args, **kwargs)
     if not self.PARAM_COUNTS[self.path]:
       count = sum([np.prod(x.shape) for x in params.values()])
       print(f'Optimizer {self.name} has {count:,} variables.')
       self.PARAM_COUNTS[self.path] = count
     if parallel():
       grads = tree_map(lambda x: jax.lax.pmean(x, 'i'), grads)
+      if adv:
+        adv_grads = tree_map(
+            lambda x: jax.lax.pmean(x, 'i'), adv_grads)
+    if adv:
+      if self.scaling:
+        rescale_g = lambda g: tree_map(lambda x: x / self.grad_scale.read(), g)
+      else:
+        rescale_g = lambda x: x
+      adv_grads = rescale_g({k: -v for k, v in adv_grads.items()})
+      orig_grads = rescale_g(grads)
+      grads = {
+        k: orig_grads.get(k, 0) + adv_grads.get(k, 0)
+        for k in set(orig_grads) | set(adv_grads)
+      }
+
     if self.scaling:
-      grads = tree_map(lambda x: x / self.grad_scale.read(), grads)
+      if not adv:
+        grads = tree_map(lambda x: x / self.grad_scale.read(), grads)
       finite = self._update_scale(grads)
       metrics[f'{self.name}_grad_scale'] = self.grad_scale.read()
       metrics[f'{self.name}_grad_overflow'] = (~finite).astype(jnp.float32)
@@ -418,11 +443,16 @@ class Optimizer(nj.Module):
       norm = jnp.where(jnp.isfinite(norm), norm, jnp.nan)
     self.step.write(self.step.read() + jnp.isfinite(norm).astype(jnp.int32))
     metrics['loss'] = loss.mean()
+    if adv:
+      metrics['adv_loss'] = adv_loss.mean()
+      metrics['loss_less_adv'] = loss.mean() - adv_loss.mean()
     metrics['grad_norm'] = norm
     metrics['grad_steps'] = self.step.read()
     if self.log_layer_norms:
       for k, grad in grads.items():
         metrics[f'norm_{k}'] = jnp.linalg.norm(grad)
+      for k, grad in adv_grads.items():
+        metrics[f'adv_norm_{k}'] = jnp.linalg.norm(grad)
     metrics = {f'{self.name}_{k}': v for k, v in metrics.items()}
     return (metrics, aux) if has_aux else metrics
 

@@ -366,7 +366,9 @@ class MultiDecoder(nj.Module):
           key: self._make_image_dist(key, mean)
           for (key, shape), mean in zip(self.cnn_shapes.items(), means)})
     if self.mlp_shapes:
-      dists.update(self._mlp(features))
+      # TODO: Double check on our codepath this only applies to 'action'
+      #  anyway, and is therefore hacky but ok.
+      dists.update(self._mlp(sg(features)))
     return dists
 
   def _make_image_dist(self, name, mean):
