@@ -271,7 +271,7 @@ class WorldModel(nj.Module):
     post, (embed, prior) = self.get_embed_post_prior(d_data, data, state)
     return vf(post).mean() if vf is not None else None, (embed, post, prior,)
 
-  def per_item_loss(self, data, state, vf, act_adv_round=False, adv_scale=None):
+  def per_item_loss(self, data, state, vf, act_adv_round=False):
     """
     World Model loss
 
@@ -336,7 +336,12 @@ class WorldModel(nj.Module):
     dists = {}
     feats = {**post, 'embed': embed}
     for name, head in self.heads.items():
-      out = head(feats if name in self.config.grad_heads else sg(feats))
+      if isinstance(head, nets.MultiDecoder):
+        out = head(
+          feats if name in self.config.grad_heads else sg(feats),
+          act_adv_round=act_adv_round)
+      else:
+       out = head(feats if name in self.config.grad_heads else sg(feats))
       out = out if isinstance(out, dict) else {name: out}
       dists.update(out)
     losses = {}

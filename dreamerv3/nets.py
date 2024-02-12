@@ -350,7 +350,7 @@ class MultiDecoder(nj.Module):
     self._inputs = Input(inputs, dims='deter')
     self._image_dist = image_dist
 
-  def __call__(self, inputs, drop_loss_indices=None):
+  def __call__(self, inputs, drop_loss_indices=None, act_adv_round=False):
     features = self._inputs(inputs)
     dists = {}
     if self.cnn_shapes:
@@ -368,7 +368,9 @@ class MultiDecoder(nj.Module):
     if self.mlp_shapes:
       # TODO: Double check on our codepath this only applies to 'action'
       #  anyway, and is therefore hacky but ok.
-      dists.update(self._mlp(sg(features)))
+      if not act_adv_round:
+        features = sg(features)
+      dists.update(self._mlp(features))
     return dists
 
   def _make_image_dist(self, name, mean):
