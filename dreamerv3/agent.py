@@ -228,6 +228,14 @@ class WorldModel(nj.Module):
           decoder_shapes, **decoder_config, name='dec'),
         'reward': nets.MLP((), **config.reward_head, name='rew'),
         'cont': nets.MLP((), **config.cont_head, name='cont')}
+    if self.config.embed_only_action_adversarial_head:
+      decoder_config = decoder_config.update({
+        'inputs': ['embed'], 'mlp_keys': 'action', 'cnn_keys': 'sfafdaf'})
+      self.heads['embed_action_head'] = nets.MultiDecoder(
+          {'action': self.act_space.shape},
+          name='embed_dec',
+          **decoder_config
+      )
     self.opt = jaxutils.Optimizer(name='model_opt', **config.model_opt)
     scales = self.config.loss_scales.copy()
     image, vector = scales.pop('image'), scales.pop('vector')
@@ -245,7 +253,8 @@ class WorldModel(nj.Module):
 
     adv_modules = None
     adv_lossfn = None
-    if self.config.adversarial_action_head:
+    if (self.config.adversarial_action_head
+        or self.config.embed_only_action_adversarial_head):
       adv_modules = [self.encoder, self.rssm]
       adv_lossfn = functools.partial(self.loss, act_adv_round=True)
     mets, (state, outs, _, metrics) = self.opt(
