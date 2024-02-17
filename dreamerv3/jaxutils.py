@@ -451,7 +451,7 @@ class Optimizer(nj.Module):
     if self.log_layer_norms:
       for k, grad in grads.items():
         metrics[f'norm_{k}'] = jnp.linalg.norm(grad)
-      for k, grad in adv_grads.items():
+      for k, grad in adv_grads.items() if adv_grads else []:
         metrics[f'adv_norm_{k}'] = jnp.linalg.norm(grad)
     metrics = {f'{self.name}_{k}': v for k, v in metrics.items()}
     return (metrics, aux) if has_aux else metrics
