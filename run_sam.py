@@ -18,7 +18,7 @@ from watchdog import events
 from watchdog import observers
 
 
-_MAX_MASKS = 100
+_MAX_MASKS = 300
 
 
 class FileProcessor(events.FileSystemEventHandler, abc.ABC):
