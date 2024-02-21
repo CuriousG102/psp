@@ -154,7 +154,8 @@ class Agent(nj.Module):
   def _gradient_weighting_net(self):
     return {
       'value_function': self.task_behavior.ac.critics['extr'].net,
-      'reward_function': self.wm.heads['reward']
+      'reward_function': self.wm.heads['reward'],
+      'policy_function': self.task_behavior.ac.actor,
     }[self.config.gradient_weighting_net]
 
   def train(self, data, state):
@@ -278,7 +279,13 @@ class WorldModel(nj.Module):
 
   def get_v_embed_post_prior(self, d_data, data, state, vf=None):
     post, (embed, prior) = self.get_embed_post_prior(d_data, data, state)
-    return vf(post).mean() if vf is not None else None, (embed, post, prior,)
+    vf_post_mean = None
+    if vf is not None:
+      vf_post_mean = vf(post).mean()
+      ndims = vf_post_mean.ndim
+      if ndims != 1:
+        vf_post_mean = jnp.mean(vf_post_mean, axis=tuple(range(1, ndims)))
+    return vf_post_mean if vf is not None else None, (embed, post, prior,)
 
   def per_item_loss(self, data, state, vf, act_adv_round=False):
     """
