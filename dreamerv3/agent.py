@@ -63,7 +63,7 @@ class Agent(nj.Module):
     elif (v_expl_mode == 'gradient'
           or v_expl_mode == 'gradient_x_intensity'
           or v_expl_mode == 'integrated_gradient'):
-      vf = self._gradient_weighting_net
+      vf = self._gradient_weighting_nets
       def get_v_v_latent(d_data, data, state):
         (prev_latent, prev_action), _, _ = state
         all_data = {**d_data, **data}
@@ -71,7 +71,9 @@ class Agent(nj.Module):
         # Return value from obs_step is post, prior
         latent, _ = self.wm.rssm.obs_step(
           prev_latent, prev_action, embed, all_data['is_first'])
-        v = vf(latent).mean()
+        v = 0.
+        for vf_ in vf:
+          v += vf_(latent).mean()
         return v, (v, latent)
       get_v_v_latent = jax.jacrev(get_v_v_latent, has_aux=True)
 
@@ -151,18 +153,19 @@ class Agent(nj.Module):
     return outs, state
 
   @property
-  def _gradient_weighting_net(self):
-    return {
+  def _gradient_weighting_nets(self):
+    available_nets = {
       'value_function': self.task_behavior.ac.critics['extr'].net,
       'reward_function': self.wm.heads['reward'],
       'policy_function': self.task_behavior.ac.actor,
-    }[self.config.gradient_weighting_net]
+    }
+    return [available_nets[net] for net in self.config.gradient_weighting_nets]
 
   def train(self, data, state):
     self.config.jax.jit and print('Tracing train function.')
     metrics = {}
     data = self.preprocess(data)
-    vf = self._gradient_weighting_net
+    vf = self._gradient_weighting_nets
     state, wm_outs, mets = self.wm.train(data, state, vf)
     metrics.update(mets)
     context = {**data, **wm_outs['post']}
@@ -280,11 +283,14 @@ class WorldModel(nj.Module):
   def get_v_embed_post_prior(self, d_data, data, state, vf=None):
     post, (embed, prior) = self.get_embed_post_prior(d_data, data, state)
     vf_post_mean = None
-    if vf is not None:
-      vf_post_mean = vf(post).mean()
-      ndims = vf_post_mean.ndim
-      if ndims != 1:
-        vf_post_mean = jnp.mean(vf_post_mean, axis=tuple(range(1, ndims)))
+    if vf:
+      vf_post_mean = 0.
+      for vf_ in vf:
+        vf_post_mean_ = vf_(post).mean()
+        ndims = vf_post_mean.ndim
+        if ndims != 1:
+          vf_post_mean_ = jnp.mean(vf_post_mean_, axis=tuple(range(1, ndims)))
+        vf_post_mean += vf_post_mean_
     return vf_post_mean if vf is not None else None, (embed, post, prior,)
 
   def per_item_loss(self, data, state, vf, act_adv_round=False):
