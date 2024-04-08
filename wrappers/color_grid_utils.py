@@ -238,6 +238,7 @@ class ColorGridBackground:
             height=84,
             width=84,
             random_seed=1,
+            total_natural_frames=1_000,
     ):
         """
         Creates a ColorGridBackground class that tracks all random color grid
@@ -455,7 +456,7 @@ class ColorGridBackground:
                 (self._height, self._width), files, grayscale=True,
                 # Hardcoded to episode length following precedent set by TIA
                 # and Denoised MDPs.
-                total_frames=1000
+                total_frames=total_natural_frames
             )
 
     def get_background_image(self, t, action, reward) -> np.array:
