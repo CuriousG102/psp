@@ -387,6 +387,12 @@ class ColorGridBackground:
             self.reward_range = [(0, 10,)]
         elif domain_name == 'hopper' and task_name == 'stand':
             self.reward_range = [0, (.8, 1)]
+        elif (
+            (domain_name == 'walker' and task_name == 'run')
+            or (domain_name == 'cartpole' and task_name == 'swingup_sparse')
+            or (domain_name == 'cartpole' and task_name == 'swingup')):
+            self.reward_range = None
+            assert self._evil_level != EvilEnum.EVIL_REWARD and self._evil_level != EvilEnum.MAXIMUM_EVIL
         else:
             # TODO: Also support walker run.
             raise ValueError('Other tasks not supported')
