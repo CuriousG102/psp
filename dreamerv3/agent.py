@@ -287,7 +287,7 @@ class WorldModel(nj.Module):
       vf_post_mean = 0.
       for vf_ in vf:
         vf_post_mean_ = vf_(post).mean()
-        ndims = vf_post_mean.ndim
+        ndims = vf_post_mean_.ndim
         if ndims != 1:
           vf_post_mean_ = jnp.mean(vf_post_mean_, axis=tuple(range(1, ndims)))
         vf_post_mean += vf_post_mean_
