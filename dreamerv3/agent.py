@@ -182,7 +182,7 @@ class Agent(nj.Module):
     self.config.jax.jit and print('Tracing report function.')
     data = self.preprocess(data)
     report = {}
-    vf = self.task_behavior.ac.critics['extr'].net
+    vf = self._gradient_weighting_nets
     report.update(self.wm.report(data, vf))
     mets = self.task_behavior.report(data)
     report.update({f'task_{k}': v for k, v in mets.items()})
