@@ -483,6 +483,10 @@ class ColorGridBackground:
         :return: Appropriate background image for tuple generated from
             (t, action, reward) given the ColorGridBackground initialization.
         """
+        if self._evil_level is EvilEnum.NATURAL:
+            if t == 0:
+                self._natural_video_source.reset()
+            return self._natural_video_source.get_image()
         if ((action is None and reward is None)
                 or self._evil_level is EvilEnum.RANDOM):
             random_idx = np.random.randint(
@@ -519,10 +523,6 @@ class ColorGridBackground:
         elif self._evil_level is EvilEnum.MINIMUM_EVIL:
             random_idx = np.random.randint(self._num_colors_per_cell)
             color_grid = self._color_grid[:, :, random_idx, :]
-        elif self._evil_level is EvilEnum.NATURAL:
-            if t == 0:
-                self._natural_video_source.reset()
-            return self._natural_video_source.get_image()
         else:
             raise ValueError(f'{self._evil_level} not supported.')
 

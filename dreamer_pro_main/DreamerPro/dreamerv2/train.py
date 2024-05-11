@@ -34,7 +34,8 @@ from wrappers import color_grid_utils
 configs = pathlib.Path(
     '/media/hdd/Storage/distracting_benchmarks/dreamer_pro_main/'
     'DreamerPro/dreamerv2/configs.yaml')
-configs = yaml.safe_load(configs.read_text())
+yaml = yaml.YAML(typ='safe', pure=True)
+configs = yaml.load(configs.read_text())
 config = elements.Config(configs['defaults'])
 parsed, remaining = elements.FlagParser(configs=['defaults']).parse_known(
     exit_on_help=False)
@@ -93,7 +94,9 @@ def make_env(mode):
       no_agent=config.no_agent if 'no_agent' in config else False,
       task_kwargs={'random': 42},
       from_pixels=True,
-      visualize_reward=False)
+      visualize_reward=False,
+      natural_video_dir=config.natural_video_dir,
+      total_natural_frames=config.total_natural_frames)
     env = common.NormalizeAction(env)
   elif suite == 'nat':
     bg_path = config.bg_path_train if mode == 'train' else config.bg_path_test

@@ -86,6 +86,8 @@ defaults:
   evil_level: max
   action_power: -1
   action_splits: [0]
+  natural_video_dir: '/media/hdd/Storage/kinetics-downloader/dataset/train/driving_car/*.mp4'
+  total_natural_frames: 1000
 
 max_evil:
 
@@ -94,6 +96,11 @@ max_evil:
   num_colors_per_cell: 11664
   evil_level: max
   action_power: 3
+
+natural_evil:
+  evil_level: natural
+  total_natural_frames: 2000
+  action_power: 1
 
 max_evil_reduced:
 

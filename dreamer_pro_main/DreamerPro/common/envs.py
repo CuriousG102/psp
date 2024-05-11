@@ -194,7 +194,7 @@ class ColorGridBg(color_grid.DmcColorGridWrapper):
       num_cells_per_dim=None, num_colors_per_cell=None, evil_level=None,
       action_dims_to_split=[], action_power=2, action_splits=None,
       no_agent=False, task_kwargs=None, visualize_reward={},
-      from_pixels=False):
+      from_pixels=False, natural_video_dir=None, total_natural_frames=1_000):
     domain, task = name.split('_')
     super().__init__(
       domain, task, num_cells_per_dim, num_colors_per_cell, evil_level,
@@ -203,7 +203,9 @@ class ColorGridBg(color_grid.DmcColorGridWrapper):
       no_agent=no_agent, task_kwargs=task_kwargs,
       visualize_reward=visualize_reward, from_pixels=from_pixels,
       height=size[0], width=size[1], camera_id=0,
-      frame_skip=action_repeat)
+      frame_skip=action_repeat,
+      natural_video_dir=natural_video_dir,
+      total_natural_frames=total_natural_frames)
     self._size = size
     self.observation_space = self._get_observation_space()
     self.action_space = self._get_action_space()
