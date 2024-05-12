@@ -1,4 +1,3 @@
-from keras_unet.models import custom_unet
 from tia.Dreamer import tools
 from tia.Dreamer import models
 from tensorflow_probability import distributions as tfd
@@ -292,6 +291,7 @@ class Dreamer(tools.Module):
         act = acts[self._c.dense_act]
         if self._c.use_unet and not self._c.mask_hardcode:
             tf.keras.mixed_precision.set_global_policy('float32')
+            from keras_unet.models import custom_unet
             self._unet = custom_unet(
                 input_shape=(self._c.image_size, self._c.image_size, 3),
                 filters=8, num_layers=3, output_activation=None)
