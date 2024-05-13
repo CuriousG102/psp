@@ -38,6 +38,8 @@ class EnvKind(enum.Enum):
                action_power: int,
                action_splits: List[int],
                no_agent: bool,
+               natural_video_dir: str,
+               total_natural_frames: int,
                *, for_storage: bool,
                seed: int,
                batch_shape=()) -> AutoResetEnvBase:
@@ -65,7 +67,9 @@ class EnvKind(enum.Enum):
             action_dims_to_split=action_dims_to_split,
             action_power=action_power if not action_splits else None,
             action_splits=action_splits if action_splits else None,
-            no_agent=no_agent
+            no_agent=no_agent,
+            natural_video_dir=natural_video_dir,
+            total_natural_frames=total_natural_frames,
         )
 
 
@@ -89,6 +93,8 @@ class EnvConfig:
     action_power: int = attrs.field(default=3, validator=attrs.validators.gt(0))
     action_splits: List[int] = attrs.field(default=[])
     no_agent: bool = attrs.field(default=False)
+    natural_video_dir: str = MISSING
+    total_natural_frames: int = MISSING
 
 
 

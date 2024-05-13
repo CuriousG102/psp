@@ -82,6 +82,8 @@ class DMCWrapper(core.Env, EnvBase):
         num_cells_per_dim,
         num_colors_per_cell,
         evil_level,
+        natural_video_dir,
+        total_natural_frames,
         action_dims_to_split=[],
         action_power=2,
         action_splits=None,
@@ -114,7 +116,9 @@ class DMCWrapper(core.Env, EnvBase):
             width=width,
             camera_id=camera_id,
             frame_skip=frame_skip,
-            environment_kwargs=environment_kwargs
+            environment_kwargs=environment_kwargs,
+            natural_video_dir=natural_video_dir,
+            total_natural_frames=total_natural_frames,
         )
 
         self._observation_output_kind = observation_output_kind

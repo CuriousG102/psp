@@ -17,7 +17,7 @@ def make_env(spec: str, observation_output_kind: EnvBase.ObsOutputKind, seed,
              evil_level, action_dims_to_split,
              action_power,
              action_splits,
-             no_agent):
+             no_agent, natural_video_dir, total_natural_frames):
     # avoid circular imports
     from ..utils import make_batched_auto_reset_env, as_SeedSequence, get_kinetics_dir
 
@@ -44,7 +44,9 @@ def make_env(spec: str, observation_output_kind: EnvBase.ObsOutputKind, seed,
             action_dims_to_split=action_dims_to_split,
             action_power=action_power,
             action_splits=action_splits,
-            no_agent=no_agent
+            no_agent=no_agent,
+            natural_video_dir=natural_video_dir,
+            total_natural_frames=total_natural_frames,
         )
 
     return make_batched_auto_reset_env(
