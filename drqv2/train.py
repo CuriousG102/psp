@@ -63,6 +63,8 @@ class Workspace:
             self.cfg.background.action_dims_to_split,
             self.cfg.background.action_power,
             self.cfg.background.action_splits,
+            self.cfg.background.natural_video_dir,
+            self.cfg.background.total_natural_frames,
         )
         self.eval_env = dmc.make(
             self.cfg.task_name,
@@ -75,6 +77,8 @@ class Workspace:
             self.cfg.background.action_dims_to_split,
             self.cfg.background.action_power,
             self.cfg.background.action_splits,
+            self.cfg.background.natural_video_dir,
+            self.cfg.background.total_natural_frames,
         )
         # create replay buffer
         data_specs = (self.train_env.observation_spec(),

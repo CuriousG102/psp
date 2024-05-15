@@ -70,3 +70,5 @@ background:
   action_dims_to_split: [0, 1, 2, 3, 4, 5]
   action_power: 3
   action_splits: null
+  natural_video_dir: '/media/hdd/Storage/kinetics-downloader/dataset/train/driving_car/*.mp4'
+  total_natural_frames: 2000

@@ -135,6 +135,8 @@ class BackgroundWrapper(dm_env.Environment):
             evil_level,
             height,
             width,
+            natural_video_dir,
+            total_natural_frames,
             pixels_key='pixels',
             action_dims_to_split=[],
             action_power=2,
@@ -280,7 +282,9 @@ class BackgroundWrapper(dm_env.Environment):
             action_splits=action_splits,
             height=height,
             width=width,
-            random_seed=random_seed
+            random_seed=random_seed,
+            natural_video_dir=natural_video_dir,
+            total_natural_frames=total_natural_frames,
         )
 
     def reset(self):
@@ -385,17 +389,6 @@ class ExtendedTimeStepWrapper(dm_env.Environment):
     def __getattr__(self, name):
         return getattr(self._env, name)
 
-EVIL_CHOICES = {
-    'max': color_grid_utils.EvilEnum.MAXIMUM_EVIL,
-    'reward': color_grid_utils.EvilEnum.EVIL_REWARD,
-    'action': color_grid_utils.EvilEnum.EVIL_ACTION,
-    'sequence': color_grid_utils.EvilEnum.EVIL_SEQUENCE,
-    'action_cross_sequence': color_grid_utils.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
-    'minimum': color_grid_utils.EvilEnum.MINIMUM_EVIL,
-    'random': color_grid_utils.EvilEnum.RANDOM,
-    'none': color_grid_utils.EvilEnum.NONE
-}
-
 def make(
         name,
         frame_stack,
@@ -407,6 +400,8 @@ def make(
         action_dims_to_split,
         action_power,
         action_splits,
+        natural_video_dir,
+        total_natural_frames,
 ):
     domain, task = name.split('_', 1)
     # overwrite cup to ball_in_cup
@@ -441,14 +436,16 @@ def make(
             env, domain, task,
             num_cells_per_dim=num_cells_per_dim,
             num_colors_per_cell=num_colors_per_cell,
-            evil_level=EVIL_CHOICES[evil_level],
+            evil_level=color_grid_utils.EVIL_CHOICE_CONVENIENCE_MAPPING[evil_level],
             height=render_kwargs['height'],
             width=render_kwargs['width'],
             pixels_key=pixels_key,
             action_dims_to_split=action_dims_to_split,
             action_power=action_power,
             action_splits=action_splits,
-            random_seed=seed
+            random_seed=seed,
+            natural_video_dir=natural_video_dir,
+            total_natural_frames=total_natural_frames
         )
     # stack several frames
     env = FrameStackWrapper(env, frame_stack, pixels_key)
