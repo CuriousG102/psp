@@ -406,6 +406,7 @@ class WorldModel(nj.Module):
           masks = jnp.concatenate([masks, neg_mask], axis=1)
           p99 = jnp.percentile(weights, 99)
           numerator = jnp.clip(weights, 0, p99)
+          weights_before_mask_aggregation = numerator
           numerator = (  # [L, M, H, W, C]
             numerator[:, None, ...]  # [L, 1, H, W, C]
             * masks[..., None]  # [L, M, H, W, 1]
@@ -503,6 +504,8 @@ class WorldModel(nj.Module):
         image_v_grad *= data['image']
       gradients_dict['image_weight'] = image_v_grad
       gradients_dict['scaled_image_weight'] = weights
+      if self.config.image_v_grad_mask_level:
+        gradients_dict['preagg_image_weight'] = weights_before_mask_aggregation
       gradients_dict['image_weight_scale_factor'] = weights_scale
     return (data, post, prior, losses, model_loss, state, out,
             gradients_dict)
@@ -569,6 +572,14 @@ class WorldModel(nj.Module):
       if 'scaled_image_weight' in gradients_dict:
         scaled = (
           gradients_dict['scaled_image_weight'][:6].sum(axis=-1)
+        )
+        weighting = jnp.zeros_like(scaled, shape=scaled.shape + (3,))
+        weighting = weighting.at[..., 0].set(scaled)
+        weighting = (weighting - weighting.min()) / (weighting.max() - weighting.min())
+        video = jnp.concatenate([video, weighting], axis=2)
+      if 'preagg_image_weight' in gradients_dict:
+        scaled = (
+          gradients_dict['preagg_image_weight'][:6].sum(axis=-1)
         )
         weighting = jnp.zeros_like(scaled, shape=scaled.shape + (3,))
         weighting = weighting.at[..., 0].set(scaled)
