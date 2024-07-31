@@ -13,6 +13,9 @@ import warnings
 
 import numpy as np
 from PIL import Image
+from sam2 import automatic_mask_generator
+from sam2 import build_sam
+import torch
 from transformers import pipeline
 from watchdog import events
 from watchdog import observers
@@ -142,6 +145,74 @@ class SamFileProcessor(FileProcessor):
     self._src_dest_queue.put((src, dest))
 
 
+def _setup_sam_2_pipeline(
+    gpu_indices: mp.Queue, src_dest_queue: mp.Queue, sam_checkpoint: str,
+    sam_model_cfg: str):
+  gpu = gpu_indices.get()
+
+  torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
+  if torch.cuda.get_device_properties(0).major >= 8:
+    # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+  sam2 = build_sam.build_sam2(
+    sam_model_cfg, sam_checkpoint, device=f'cuda:{gpu}')
+  mask_generator = automatic_mask_generator.SAM2AutomaticMaskGenerator(
+    sam2, points_per_side=16, pred_iou_thresh=.75, stability_score_thresh=.75,
+    output_mode='bindary_mask')
+
+  while True:
+    src, dest = src_dest_queue.get()
+    chunk = np.load(src)
+
+    # Generate masks for all images in a batch
+    images = chunk['image']
+    try:
+      batch_outputs = [mask_generator.generate(image) for image in images]
+    except Exception:
+      logging.error(f"Can't process {src}: {traceback.format_exc()}")
+      continue
+
+    # TODO: Deduplicate the code below with _setup_sam_pipeline.
+    # Pad masks and prepare for saving
+    masks_count = []
+    padded_masks_list = []
+    for output in batch_outputs:
+      masks_count.append(min(len(output), _MAX_MASKS))
+      masks = [record['segmentation'] for record in output]
+      padded_masks = _pad_masks(masks, _MAX_MASKS)
+      padded_masks_list.append(padded_masks)
+
+    # Stack and save the masks
+    all_masks = np.stack(padded_masks_list)
+    masks_count_array = np.array(masks_count)
+    np.savez_compressed(dest.replace('.npz', 'tmp.npz'), **chunk,
+                        masks=all_masks,
+                        masks_count=masks_count_array)
+    shutil.move(dest.replace('.npz', 'tmp.npz'), dest)
+
+
+class Sam2FileProcessor(FileProcessor):
+  def __init__(self, gpu_indices, sam_checkpoint: str, sam_model_config: str, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._gpu_queue = mp.Queue()
+    for idx in gpu_indices:
+      self._gpu_queue.put(idx)
+    self._src_dest_queue = mp.Queue()
+    self.processes = [
+      mp.Process(target=_setup_sam_2_pipeline, args=(
+        self._gpu_queue, self._src_dest_queue, sam_checkpoint,
+        sam_model_config))
+      for _ in gpu_indices
+    ]
+    for process in self.processes:
+      process.start()
+
+  def _process_file(self, src, dest):
+    self._src_dest_queue.put((src, dest))
+
+
 def main():
   parser = argparse.ArgumentParser(
     description='Use SAM to create postprocessed version of saved chunks '
@@ -155,8 +226,9 @@ def main():
   parser.add_argument(
     '--gpus', help='GPUs to use.', default='0'
   )
-
-  args = parser.parse_args()
+  parser.add_argument('--sam2_ckpt', default='/path/to/sam2_ckpt.pt')
+  args = parser.add_argument('--sam2_cfg', 'sam2_hiera_l.yaml')
+  parser.parse_args()
 
   # Check if logdir exists
   if not os.path.exists(args.logdir):
@@ -182,6 +254,11 @@ def main():
   elif args.mode == 'sam':
     sam_handler = SamFileProcessor(
         [int(i) for i in args.gpus.split(',')],
+        preprocessed_replay_path, postprocessed_replay_path)
+  elif args.mode == 'sam_2':
+    sam_handler = Sam2FileProcessor(
+        [int(i) for i in args.gpus.split(',')],
+        args.sam2_ckpt, args.sam2_cfg,
         preprocessed_replay_path, postprocessed_replay_path)
   else:
     raise ValueError('Mode must be either emulate or sam')
