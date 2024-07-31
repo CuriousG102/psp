@@ -421,6 +421,7 @@ class WorldModel(nj.Module):
           weights = weights[..., None]  # [L, H, W, 1], last dim replaces C.
 
         if self.config.image_v_grad_interp_value != 1.:
+          # Normalizing each frame's weights to sum to 1.
           original_weight_sum = jnp.prod(jnp.array(weights.shape[-3:]))
           weights = (
               weights  # [L, H, W, C]
@@ -429,9 +430,14 @@ class WorldModel(nj.Module):
                   / weights.sum((-1, -2, -3), keepdims=True)  # [L, 1, 1, 1]
               )
           )
+
+          # Any frame that has no weights at all is set to a uniform weighting.
           frame_nans = jnp.any(
               ~jnp.isfinite(weights), (-1, -2, -3), keepdims=True)  # [L, 1, 1, 1]
           weights = jnp.where(frame_nans, 1., weights)
+
+          # Interpolating between gradient weighted reconstruction loss and
+          # a uniform weighting.
           weights = (
               jnp.ones_like(weights) * (
                   1 - self.config.image_v_grad_interp_value
