@@ -148,19 +148,19 @@ class SamFileProcessor(FileProcessor):
 def _setup_sam_2_pipeline(
     gpu_indices: mp.Queue, src_dest_queue: mp.Queue, sam_checkpoint: str,
     sam_model_cfg: str):
-  gpu = gpu_indices.get()
-
-  torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
+  torch.autocast(device_type="cuda", dtype=torch.float16).__enter__()
   if torch.cuda.get_device_properties(0).major >= 8:
     # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
+  gpu = gpu_indices.get()
+
   sam2 = build_sam.build_sam2(
     sam_model_cfg, sam_checkpoint, device=f'cuda:{gpu}')
   mask_generator = automatic_mask_generator.SAM2AutomaticMaskGenerator(
     sam2, points_per_side=16, pred_iou_thresh=.75, stability_score_thresh=.75,
-    output_mode='bindary_mask')
+    output_mode='binary_mask')
 
   while True:
     src, dest = src_dest_queue.get()
@@ -214,6 +214,7 @@ class Sam2FileProcessor(FileProcessor):
 
 
 def main():
+  mp.set_start_method('spawn')
   parser = argparse.ArgumentParser(
     description='Use SAM to create postprocessed version of saved chunks '
                 'from DreamerV3 with additional segmentation masks for '
@@ -227,8 +228,8 @@ def main():
     '--gpus', help='GPUs to use.', default='0'
   )
   parser.add_argument('--sam2_ckpt', default='/path/to/sam2_ckpt.pt')
-  args = parser.add_argument('--sam2_cfg', 'sam2_hiera_l.yaml')
-  parser.parse_args()
+  parser.add_argument('--sam2_cfg', default='sam2_hiera_l.yaml')
+  args = parser.parse_args()
 
   # Check if logdir exists
   if not os.path.exists(args.logdir):
