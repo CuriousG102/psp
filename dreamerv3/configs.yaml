@@ -66,6 +66,7 @@ defaults:
     action_splits: [0, 0, 0, 0, 0, 0]
     natural_video_dir: '/media/hdd/Storage/kinetics-downloader/dataset/train/driving_car/*.mp4'
     total_natural_frames: 1000
+    random_seed: 1
 
   # Agent
   task_behavior: Greedy

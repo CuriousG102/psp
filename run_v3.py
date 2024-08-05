@@ -63,6 +63,7 @@ def main(argv=None):
             natural_video_dir=config.evil.natural_video_dir,
             mask_spaces=mask_spaces,
             total_natural_frames=config.evil.total_natural_frames,
+            random_seed=config.evil.random_seed
         )
     elif config.environment == 'rlbench':
         # TODO: Add support for mask spaces to RLBench as well.

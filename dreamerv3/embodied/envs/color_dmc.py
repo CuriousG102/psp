@@ -31,6 +31,7 @@ class DMC(embodied.Env):
           natural_video_dir=None,
           mask_spaces=None,
           total_natural_frames=1000,
+          random_seed=1,
   ):
     # TODO: This env variable is meant for headless GPU machines but may fail
     # on CPU-only machines.
@@ -65,6 +66,7 @@ class DMC(embodied.Env):
       width=size[1],
       natural_video_dir=natural_video_dir,
       total_natural_frames=total_natural_frames,
+      random_seed=random_seed,
     )
     self._evil_level = evil_level
     self._step = 0
