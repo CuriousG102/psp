@@ -280,6 +280,17 @@ class WorldModel(nj.Module):
       batch_free=True)
     return post, (embed, prior)
 
+  def get_v_diff_embed_post_prior(self, d_data, data, state, vf=None):
+    prev_latent, prev_action = state
+    prev_actions = jnp.concatenate([
+      prev_action[None], data['action'][:-1]
+    ], 0)
+    embed, post, prior, grads = self.rssm.observe_diff_vf(
+      functools.partial(self.encoder, training=True),
+    d_data, data, prev_actions, data['is_first'], prev_latent, batch_free=True,
+      vf=vf)
+    return embed, post, prior, grads
+
   def get_v_embed_post_prior(self, d_data, data, state, vf=None):
     post, (embed, prior) = self.get_embed_post_prior(d_data, data, state)
     vf_post_mean = None
@@ -313,18 +324,19 @@ class WorldModel(nj.Module):
       _, (embed, post, prior) = self.get_v_embed_post_prior({}, data, state)
     else:
       if self.config.image_v_grad:
-        embed_post_prior = jax.jacrev(
-            functools.partial(self.get_v_embed_post_prior, vf=vf), has_aux=True)
 
         d_data = {}
         for k in self.encoder.cnn_shapes:
           if k in data:
             d_data[k] = data[k]
             del data[k]
-
-        image_v_grad, (embed, post, prior) = embed_post_prior(d_data, data, state)
-        batch_length = image_v_grad['image'].shape[0]
         if self.config.image_v_grad_backprop_truncation > 1:
+          embed_post_prior = jax.jacrev(
+            functools.partial(self.get_v_embed_post_prior, vf=vf), has_aux=True)
+
+          image_v_grad, (embed, post, prior) = embed_post_prior(d_data, data,
+                                                                state)
+          batch_length = image_v_grad['image'].shape[0]
           window = self.config.image_v_grad_backprop_truncation
           coords = jnp.arange(batch_length)
           dist = coords[:, None] - coords[None, :]
@@ -336,13 +348,15 @@ class WorldModel(nj.Module):
                   / attends[..., None, None, None].astype(
                     jnp.float32).sum(axis=0))).astype(x.dtype),
               image_v_grad)
+
         else:
-          image_v_grad = tree_map(
-              lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
-              image_v_grad)
+          embed, post, prior, image_v_grad = self.get_v_diff_embed_post_prior(
+            d_data, data, state, vf=vf
+          )
+        data.update(d_data)
+
         image_v_grad = sg(image_v_grad)
 
-        data.update(d_data)
       if self.config.dyn_v_grad or self.config.rep_v_grad:
         if not self.config.image_v_grad:
           post, (embed, prior) = self.get_embed_post_prior({}, data, state)

@@ -69,6 +69,45 @@ class RSSM(nj.Module):
     prior = {k: swap(v) for k, v in prior.items()}
     return post, prior
 
+  def observe_diff_vf(
+      self, embed_fn, d_data, data, action, is_first, state=None,
+      batch_free=False, vf=None):
+    assert batch_free, 'batch_free must be set to True'
+
+    def vf_post_mean(post):
+      vf_post_mean = 0.
+      for vf_ in vf:
+        vf_post_mean_ = vf_(post).mean()
+        ndims = vf_post_mean_.ndim
+        if ndims != 1:
+          vf_post_mean_ = jnp.mean(vf_post_mean_, axis=tuple(range(1, ndims)))
+        vf_post_mean += vf_post_mean_
+      return vf_post_mean
+
+    def obs_step(prev_state, d_data, data, prev_action, is_first):
+      all_data = {}
+      all_data.update(d_data)
+      all_data.update(data)
+      embed = embed_fn(all_data)
+      post, prior = self.obs_step(
+        prev_state, prev_action, embed, is_first, batch_free=batch_free)
+      return vf_post_mean(post), (embed, post, prior)
+
+    obs_step = jax.value_and_grad(obs_step, has_aux=True)
+
+    obs_step = lambda prev, inputs: obs_step(prev[0], *inputs)
+
+    inputs = d_data, data, action, is_first
+
+    if state is None:
+      state = self.initial(action.shape[0], batch_free=batch_free)
+
+    start = state, state
+
+    (_, (embed, post, prior)), grads = jaxutils.scan(obs_step, inputs, start, self._unroll)
+
+    return embed, post, prior, grads
+
   def imagine(self, action, state=None):
     swap = lambda x: x.transpose([1, 0] + list(range(2, len(x.shape))))
     state = self.initial(action.shape[0]) if state is None else state
