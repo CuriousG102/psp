@@ -330,6 +330,9 @@ class WorldModel(nj.Module):
           if k in data:
             d_data[k] = data[k]
             del data[k]
+        ignored_data = {}
+        ignored_data['step'] = data['step']
+        del data['step']
         if self.config.image_v_grad_backprop_truncation > 1:
           embed_post_prior = jax.jacrev(
             functools.partial(self.get_v_embed_post_prior, vf=vf), has_aux=True)
@@ -354,6 +357,7 @@ class WorldModel(nj.Module):
             d_data, data, state, vf=vf
           )
         data.update(d_data)
+        data.update(ignored_data)
 
         image_v_grad = sg(image_v_grad)
 

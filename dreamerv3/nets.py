@@ -81,7 +81,7 @@ class RSSM(nj.Module):
         ndims = vf_post_mean_.ndim
         if ndims != 1:
           vf_post_mean_ = jnp.mean(vf_post_mean_, axis=tuple(range(1, ndims)))
-        vf_post_mean += vf_post_mean_
+        vf_post_mean +=  jnp.mean(vf_post_mean_)
       return vf_post_mean
 
     def obs_step(prev_state, d_data, data, prev_action, is_first):
@@ -93,18 +93,25 @@ class RSSM(nj.Module):
         prev_state, prev_action, embed, is_first, batch_free=batch_free)
       return vf_post_mean(post), (embed, post, prior)
 
-    obs_step = jax.value_and_grad(obs_step, has_aux=True)
+    obs_step = jax.value_and_grad(obs_step, argnums=1, has_aux=True)
 
-    obs_step = lambda prev, inputs: obs_step(prev[0], *inputs)
+    def obs_step_for_scan(prev, inputs):
+      prev_post, prev_prior, prev_embed, prev_vf_grads = prev
+      (_, (embed, post, prior)), vf_grads = obs_step(prev_post, *inputs)
+      return post, prior, embed, vf_grads
 
     inputs = d_data, data, action, is_first
 
     if state is None:
       state = self.initial(action.shape[0], batch_free=batch_free)
 
-    start = state, state
+    start_post, start_prior, start_embed = state, state, embed_fn(
+      jax.tree_util.tree_map(lambda x: x[0], d_data | data))
+    start_grads = jax.tree_util.tree_map(lambda x: x[0], d_data)
+    start = start_post, start_prior, start_embed, start_grads
 
-    (_, (embed, post, prior)), grads = jaxutils.scan(obs_step, inputs, start, self._unroll)
+    post, prior, embed, grads = jaxutils.scan(
+      obs_step_for_scan, inputs, start, self._unroll)
 
     return embed, post, prior, grads
 
