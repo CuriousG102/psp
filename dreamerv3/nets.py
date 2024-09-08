@@ -81,7 +81,7 @@ class RSSM(nj.Module):
         ndims = vf_post_mean_.ndim
         if ndims != 1:
           vf_post_mean_ = jnp.mean(vf_post_mean_, axis=tuple(range(1, ndims)))
-        vf_post_mean +=  jnp.mean(vf_post_mean_)
+        vf_post_mean += jnp.mean(vf_post_mean_)
       return vf_post_mean
 
     def obs_step(prev_state, d_data, data, prev_action, is_first):

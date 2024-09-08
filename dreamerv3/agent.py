@@ -287,8 +287,8 @@ class WorldModel(nj.Module):
     ], 0)
     embed, post, prior, grads = self.rssm.observe_diff_vf(
       functools.partial(self.encoder, training=True),
-    d_data, data, prev_actions, data['is_first'], prev_latent, batch_free=True,
-      vf=vf)
+      d_data, data, prev_actions, data['is_first'], prev_latent,
+      batch_free=True, vf=vf)
     return embed, post, prior, grads
 
   def get_v_embed_post_prior(self, d_data, data, state, vf=None):
