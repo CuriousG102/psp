@@ -78,9 +78,6 @@ class RSSM(nj.Module):
       vf_post_mean = 0.
       for vf_ in vf:
         vf_post_mean_ = vf_(post).mean()
-        ndims = vf_post_mean_.ndim
-        if ndims != 1:
-          vf_post_mean_ = jnp.mean(vf_post_mean_, axis=tuple(range(1, ndims)))
         vf_post_mean += jnp.mean(vf_post_mean_)
       return vf_post_mean
 
@@ -107,7 +104,13 @@ class RSSM(nj.Module):
 
     start_post, start_prior, start_embed = state, state, embed_fn(
       jax.tree_util.tree_map(lambda x: x[0], d_data | data))
-    start_grads = jax.tree_util.tree_map(lambda x: x[0], d_data)
+    (_, _), start_grads = obs_step(
+      start_post,
+      jax.tree_util.tree_map(lambda x: x[0], d_data),
+      jax.tree_util.tree_map(lambda x: x[0], data),
+      jax.tree_util.tree_map(lambda x: x[0], action),
+      jax.tree_util.tree_map(lambda x: x[0], is_first),
+    )
     start = start_post, start_prior, start_embed, start_grads
 
     post, prior, embed, grads = jaxutils.scan(

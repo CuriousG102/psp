@@ -443,13 +443,11 @@ class WorldModel(nj.Module):
           original_weight_sum = jnp.prod(jnp.array(weights.shape[-3:]))
           weights = (
               weights  # [L, H, W, C]
-              * (  # [L, 1, 1, 1]
-                  original_weight_sum  # [1,]
-                  / weights.sum((-1, -2, -3), keepdims=True)  # [L, 1, 1, 1]
-              )
+              / weights.sum((-1, -2, -3), keepdims=True)  # [L, 1, 1, 1]
           )
 
           # Any frame that has no weights at all is set to a uniform weighting.
+
           frame_nans = jnp.any(
               ~jnp.isfinite(weights), (-1, -2, -3), keepdims=True)  # [L, 1, 1, 1]
           weights = jnp.where(frame_nans, 1., weights)
@@ -457,7 +455,7 @@ class WorldModel(nj.Module):
           # Interpolating between gradient weighted reconstruction loss and
           # a uniform weighting.
           weights = (
-              jnp.ones_like(weights) * (
+              jnp.ones_like(weights) / original_weight_sum * (
                   1 - self.config.image_v_grad_interp_value
               )
               + weights * self.config.image_v_grad_interp_value
@@ -468,7 +466,7 @@ class WorldModel(nj.Module):
           weights = jnp.where(weights > p95, p95, weights)
 
         if self.config.image_v_grad_normed:
-          weights /= jnp.sum(weights, axis=-1, keepdims=True)
+          weights /= weights.sum((-1, -2, -3), keepdims=True)
 
         warmup = self.config.v_grad_warmup_steps
         if warmup > 0:
