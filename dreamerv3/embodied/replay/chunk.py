@@ -14,8 +14,9 @@ class Chunk:
     self.uuid = str(embodied.uuid())
     self.successor = successor
     self.size = size
-    self.data = None
+    self._data = None
     self.length = 0
+    self._filename = None
 
   def __repr__(self):
     succ = self.successor or str(embodied.uuid(0))
@@ -32,13 +33,13 @@ class Chunk:
     return True
 
   def append(self, step):
-    if not self.data:
+    if not self._data:
       example = {k: embodied.convert(v) for k, v in step.items()}
-      self.data = {
+      self._data = {
           k: np.empty((self.size,) + v.shape, v.dtype)
           for k, v in example.items()}
     for key, value in step.items():
-      self.data[key][self.length] = value
+      self._data[key][self.length] = value
     self.length += 1
 
   def save(self, directory):
@@ -56,18 +57,29 @@ class Chunk:
     print(f'Saved chunk: {filename.name}')
 
   @classmethod
-  def load(cls, filename):
+  def load(cls, filename, lazy_load=False):
     length = int(filename.stem.split('-')[3])
-    with embodied.Path(filename).open('rb') as f:
-      data = np.load(f)
-      data = {k: data[k] for k in data.keys()}
     chunk = cls(length)
+    chunk._filename = filename
     chunk.time = filename.stem.split('-')[0]
     chunk.uuid = filename.stem.split('-')[1]
     chunk.successor = filename.stem.split('-')[2]
     chunk.length = length
-    chunk.data = data
+    if not lazy_load:
+      chunk._load_data()
     return chunk
+
+  def _load_data(self):
+    with embodied.Path(self._filename).open('rb') as f:
+      data = np.load(f)
+      self._data = {k: data[k] for k in data.keys()}
+
+  @property
+  def data(self):
+    if self._data is None:
+      self._load_data()
+
+    return self._data
 
   @classmethod
   def scan(cls, directory, capacity=None, shorten=0):

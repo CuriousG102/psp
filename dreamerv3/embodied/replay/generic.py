@@ -1,4 +1,5 @@
 import concurrent.futures
+import functools
 import os.path
 import time
 from collections import defaultdict, deque
@@ -351,7 +352,7 @@ class PostprocessedFileHandler(events.FileSystemEventHandler):
       # TODO: Do the bitpacking here so we don't pile up stuff until we get
       #  the first chunk, on initial load.
       chunks = list(load_executor.map(
-          chunklib.Chunk.load, filenames))
+          functools.partial(chunklib.Chunk.load, lazy_load=True), filenames))
       streamids = {}
       for chunk in reversed(sorted(chunks, key=lambda x: x.time)):
         if chunk.successor not in streamids:
