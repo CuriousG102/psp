@@ -7,6 +7,7 @@ from functools import partial as bind
 
 import embodied
 import numpy as np
+import tqdm
 from watchdog import events
 from watchdog import observers
 
@@ -360,7 +361,8 @@ class PostprocessedFileHandler(events.FileSystemEventHandler):
         else:
           streamids[chunk.uuid] = streamids[chunk.successor]
 
-      for i, chunk in enumerate(chunks):
+      for i, chunk in tqdm.tqdm(
+          enumerate(chunks), total=len(chunks), desc="Processing chunks"):
         stream = streamids[chunk.uuid]
         self.process_chunk(chunk, stream, load=True)
         # Free memory early to not require twice the replay capacity.
