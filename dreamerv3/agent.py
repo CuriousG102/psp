@@ -349,7 +349,6 @@ class WorldModel(nj.Module):
         v_mean = jax.jacrev(lambda post: vf(post).mean())
         latent_v_grad = v_mean(post)
         batch_length = latent_v_grad['deter'].shape[0]
-        # TODO: Option to aggregate future gradients on this value.
         latent_v_grad = tree_map(
             lambda x: x[jnp.arange(batch_length), jnp.arange(batch_length)],
             latent_v_grad)
@@ -467,19 +466,12 @@ class WorldModel(nj.Module):
 
         original_loss = loss
         loss = weights * loss
-        if self.config.image_v_grad_norm_keep_magnitude:
-          # TODO: Reading this with a fresh mind, I'm pretty sure it's broken.
-          loss *= (
-              jnp.sum(original_loss, axis=-1, keepdims=True)
-              / jnp.sum(loss, axis=-1, keepdims=True)
-          )
 
         loss = loss.sum(
             # (C, W, H)
             (-1, -2, -3)
         )
       else:
-        # TODO: I think this is the right way to do it?
         if key == 'action':
           prev_latent, prev_action = state
           truth = jnp.concatenate([
@@ -599,7 +591,6 @@ class WorldModel(nj.Module):
         masks = masks * colors[:, :, :, None, None, :]  # [B, L, M, H, W, C]
         masks = masks.sum(axis=2)  # [B, L, H, W, C]
         video = jnp.concatenate([video, masks], axis=2)
-      # TODO: Add visualization of SAM masks.
       report[f'openl_{key}'] = jaxutils.video_grid(video)
     return report
 

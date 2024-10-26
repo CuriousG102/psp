@@ -94,7 +94,6 @@ defaults:
   gradient_weighting_nets: ['value_function']
   image_v_grad_mask_level: false
   image_v_grad_normed: false
-  image_v_grad_norm_keep_magnitude: false
   image_v_grad_percentile_clip: false
   image_v_grad_x_intensity: false
   image_v_grad_window_size: 1
@@ -420,9 +419,6 @@ image_value_gradient_smooth_with_sam:
 
 image_value_gradient_normed:
   image_v_grad_normed: true
-
-image_value_gradient_norm_keep_magnitude:
-  image_v_grad_norm_keep_magnitude: true
 
 image_value_gradient_interp_pt9:
   image_v_grad_interp_value: .9

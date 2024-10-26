@@ -200,7 +200,6 @@ class RSSM(nj.Module):
       if weight is None:
         loss = post_dist.kl_divergence(prior_dist)
       else:
-        # TODO: Make this less horribly hacky.
         loss = self._weighted_kl_divergence(
             post_dist, prior_dist, weight,
             normed=normed, keep_magnitude=keep_magnitude,
@@ -225,15 +224,12 @@ class RSSM(nj.Module):
     post_logits = post_dist.distribution.logits
     prior_logits = prior_dist.distribution.logits
 
-    # TODO: Shared utility for norming & magnitude presevation so this
-    #       can be shared for image and latent losses.
     logit_weights = jnp.abs(weight['stoch']) + 1e-6
     if percentile_clip:
       p95 = jnp.percentile(logit_weights, 95)
       logit_weights = jnp.where(logit_weights > p95, p95, logit_weights)
 
     if normed:
-      # TODO: Log how often logit_weights is all zeros.
       logit_weights /= jnp.sum(logit_weights, axis=-1, keepdims=True)
 
     loss = jax.nn.softmax(post_logits) * (
@@ -366,8 +362,8 @@ class MultiDecoder(nj.Module):
           key: self._make_image_dist(key, mean)
           for (key, shape), mean in zip(self.cnn_shapes.items(), means)})
     if self.mlp_shapes:
-      # TODO: Double check on our codepath this only applies to 'action'
-      #  anyway, and is therefore hacky but ok.
+      #  On our codepath this only applies to 'action', so this is hacky but
+      #  OK.
       if not act_adv_round:
         features = sg(features)
       dists.update(self._mlp(features))

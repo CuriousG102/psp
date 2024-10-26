@@ -85,7 +85,6 @@ class Dreamer(tools.Module):
             action = tf.zeros((len(obs['image']), self._actdim), self._float)
         else:
             latent, action = state
-        # TODO: Modify here too.
         obs = preprocess(obs, self._c)
         if self._c.use_unet:
             if not self._c.mask_hardcode:
@@ -217,7 +216,6 @@ class Dreamer(tools.Module):
             reward_pred = self._reward(feat)
 
             likes = tools.AttrDict()
-            # Todo: Maybe weight image log prob loss according to mask weights?
             likes.image = (
                 tf.reduce_mean(image_pred.log_prob(data['image']))
                 * self._c.image_loss_scale)
