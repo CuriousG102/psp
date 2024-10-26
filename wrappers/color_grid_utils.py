@@ -1,6 +1,9 @@
 import enum
+import glob
+import os
 
 import numpy as np
+
 
 
 class EvilEnum(enum.Enum):
@@ -10,9 +13,23 @@ class EvilEnum(enum.Enum):
     EVIL_ACTION_CROSS_SEQUENCE = enum.auto()
     EVIL_SEQUENCE = enum.auto()
     MINIMUM_EVIL = enum.auto()
+    NATURAL = enum.auto()
     RANDOM = enum.auto()
     COLOR = enum.auto()
     NONE = enum.auto()
+
+
+EVIL_CHOICE_CONVENIENCE_MAPPING = {
+    'max': EvilEnum.MAXIMUM_EVIL,
+    'reward': EvilEnum.EVIL_REWARD,
+    'action': EvilEnum.EVIL_ACTION,
+    'sequence': EvilEnum.EVIL_SEQUENCE,
+    'action_cross_sequence': EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
+    'minimum': EvilEnum.MINIMUM_EVIL,
+    'random': EvilEnum.RANDOM,
+    'natural': EvilEnum.NATURAL,
+    'none': EvilEnum.NONE,
+}
 
 
 def split_action_space(action_dims, num_colors, power):
@@ -117,7 +134,7 @@ def get_colors_for_action_and_sequence_evil(
         num_colors_per_cell - colors_for_action * colors_for_sequence)
     if action_splits is None:
         action_splits = split_action_space(
-            action_dims_to_split, colors_for_action, power=action_power),
+            action_dims_to_split, colors_for_action, power=action_power)
     return (action_splits, colors_for_sequence)
 
 
@@ -220,10 +237,11 @@ class ColorGridBackground:
             action_dims_to_split=[],
             action_power=2,
             action_splits=None,
-            bg_color=None,
+            natural_video_dir=None,
             height=84,
             width=84,
             random_seed=1,
+            total_natural_frames=1_000,
     ):
         """
         Creates a ColorGridBackground class that tracks all random color grid
@@ -308,11 +326,10 @@ class ColorGridBackground:
                 backgrounds would simply result in unused backgrounds.
             `EVIL_ACTION_CROSS_SEQUENCE`:  If set, crosses action spaces with
                 sequence positions to generate mapping to backgrounds.
-                Currently only supports `action_power`, and not
-                `action_splits`. The number of colors for discretizing the
-                sequence space will be determined according to the floor
-                division of `num_colors_per_cell` and the action space
-                cardinality, such that our action space assignments are
+                If not using `action_splits`, he number of colors for
+                discretizing the sequence space will be determined according
+                to the floor division of `num_colors_per_cell` and the action
+                space cardinality, such that our action space assignments are
                 unique for a given sequence position according to
                 actionSpaceAssignmentsForStep =
                 globalSpaceActionAssignments[stepPos % numColorsForSequence].
@@ -328,6 +345,10 @@ class ColorGridBackground:
                 Since cells are not chosen jointly, unlike other modes, this
                 is myuch like static, but the colors for each cell are chosen
                 in advance.
+            `NATURAL`: Currently hacky, allows re-use of this interface
+                for one more distraction task. When this is set to true a
+                black-and-white video background replaces the background.
+                It is not controlled by the usual params.
             `NONE`: The background is not replaced.
         :param action_dims_to_split: Described under `evil_level`
             `EVIL_ACTION`. Action dimensions to be considered for action to
@@ -338,6 +359,9 @@ class ColorGridBackground:
         :param action_splits: Described under `evil_level`
             `EVIL_ACTION`. Specifies how many spaces each individual action
             dimension will be split into.
+        :param natural_video_dir: Directory containing natural videos.
+            Required if `evil_level` is `NATURAL`. Can be populated for other
+            `evil_level`s and will simply serve as a no-op.
         :param height: Image height.
         :param width: Image width.
         :param random_seed: Random seed to use for choosing background.
@@ -356,6 +380,9 @@ class ColorGridBackground:
         self._num_cells_per_dim = num_cells_per_dim
         self._action_dims_to_split = action_dims_to_split
         self._action_power = action_power
+        self._natural_video_dir = natural_video_dir
+        self._natural_video_source = None
+        self._color_grid = None
         self._height = height
         self._width = width
 
@@ -363,11 +390,17 @@ class ColorGridBackground:
             self.reward_range = [(0, 10,)]
         elif domain_name == 'hopper' and task_name == 'stand':
             self.reward_range = [0, (.8, 1)]
+        elif (
+            (domain_name == 'walker' and task_name == 'run')
+            or (domain_name == 'cartpole' and task_name == 'swingup_sparse')
+            or (domain_name == 'cartpole' and task_name == 'swingup')):
+            self.reward_range = None
+            assert self._evil_level != EvilEnum.EVIL_REWARD and self._evil_level != EvilEnum.MAXIMUM_EVIL
         else:
             # TODO: Also support walker run.
             raise ValueError('Other tasks not supported')
 
-        if action_splits is None:
+        if action_splits is None and self._evil_level is not EvilEnum.NATURAL:
             min_colors_needed = get_min_colors_needed(
                 evil_level, self.reward_range, self._action_dims_to_split,
                 self._action_power)
@@ -403,28 +436,37 @@ class ColorGridBackground:
                     self._num_colors_per_cell, self._action_dims_to_split,
                     self._action_power)
         elif evil_level is EvilEnum.EVIL_ACTION_CROSS_SEQUENCE:
-            self.colors_per_action_dim, self.num_colors_for_sequence = (
-                get_colors_for_action_and_sequence_evil(
-                    num_colors_per_cell, action_dims_to_split, action_power,
-                    action_splits))
+            if action_splits is None:
+                self.colors_per_action_dim, self.num_colors_for_sequence = (
+                    get_colors_for_action_and_sequence_evil(
+                        num_colors_per_cell, action_dims_to_split, action_power,
+                        action_splits))
+            else:
+                self.colors_per_action_dim = action_splits
+                total = 1
+                for i in self.colors_per_action_dim:
+                    total *= i
+                self.num_colors_for_sequence = num_colors_per_cell // total
+                print(f'num_colors_for_sequence: {self.num_colors_for_sequence}')
+                assert total * self.num_colors_for_sequence == num_colors_per_cell
 
         np.random.seed(random_seed)
-        if evil_level is EvilEnum.COLOR:
-            self._color_grid = np.repeat(
-                np.repeat(
-                    np.reshape(
-                        np.array(bg_color),
-                        (1, 1, 1, -1)
-                    ),
-                    self._num_cells_per_dim, axis=1),
-                self._num_cells_per_dim, axis=0
-            )
-        else:
+        if evil_level is not EvilEnum.NATURAL:
             self._color_grid = np.random.randint(255, size=[
                 self._num_cells_per_dim, self._num_cells_per_dim,
                 self._num_colors_per_cell, 3])
-        assert evil_level is not EvilEnum.COLOR or bg_color is not None
-        self._bg_color = bg_color
+        else:
+            assert natural_video_dir is not None
+            files = glob.glob(os.path.expanduser(natural_video_dir))
+            assert len(files), (
+                f'Pattern {natural_video_dir} does not match any files.')
+            from tia.Dreamer.dmc2gym import natural_imgsource
+            self._natural_video_source = natural_imgsource.RandomVideoSource(
+                (self._height, self._width), files, grayscale=True,
+                # Hardcoded to episode length following precedent set by TIA
+                # and Denoised MDPs.
+                total_frames=total_natural_frames
+            )
 
     def get_background_image(self, t, action, reward) -> np.array:
         """Returns appropriate background image for t, action, reward.
@@ -444,6 +486,10 @@ class ColorGridBackground:
         :return: Appropriate background image for tuple generated from
             (t, action, reward) given the ColorGridBackground initialization.
         """
+        if self._evil_level is EvilEnum.NATURAL:
+            if t == 0:
+                self._natural_video_source.reset()
+            return self._natural_video_source.get_image()
         if ((action is None and reward is None)
                 or self._evil_level is EvilEnum.RANDOM
                 or self._evil_level is EvilEnum.COLOR):

@@ -27,7 +27,9 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
         camera_id=0,
         frame_skip=1,
         environment_kwargs=None,
-        episode_length=None
+        episode_length=None,
+        natural_video_dir=None,
+        total_natural_frames=1_000,
     ):
         """
         Creates a specialized instance of the TIA wrappers.DMCWrapper.
@@ -200,7 +202,9 @@ class DmcColorGridWrapper(wrappers.DMCWrapper):
             bg_color=bg_color,
             height=height,
             width=width,
-            random_seed=task_kwargs.get('random', 1)
+            random_seed=task_kwargs.get('random', 1),
+            natural_video_dir=natural_video_dir,
+            total_natural_frames=total_natural_frames
         )
 
          # create observation space

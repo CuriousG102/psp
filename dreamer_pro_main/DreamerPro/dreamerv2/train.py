@@ -34,7 +34,8 @@ from wrappers import color_grid_utils
 configs = pathlib.Path(
     '/media/hdd/Storage/distracting_benchmarks/dreamer_pro_main/'
     'DreamerPro/dreamerv2/configs.yaml')
-configs = yaml.safe_load(configs.read_text())
+yaml = yaml.YAML(typ='safe', pure=True)
+configs = yaml.load(configs.read_text())
 config = elements.Config(configs['defaults'])
 parsed, remaining = elements.FlagParser(configs=['defaults']).parse_known(
     exit_on_help=False)
@@ -76,18 +77,6 @@ should_video_train = elements.Every(config.eval_every)
 should_video_eval = elements.Every(config.eval_every)
 
 
-EVIL_CHOICES = {
-    'max': color_grid_utils.EvilEnum.MAXIMUM_EVIL,
-    'reward': color_grid_utils.EvilEnum.EVIL_REWARD,
-    'action': color_grid_utils.EvilEnum.EVIL_ACTION,
-    'sequence': color_grid_utils.EvilEnum.EVIL_SEQUENCE,
-    'action_cross_sequence': color_grid_utils.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
-    'minimum': color_grid_utils.EvilEnum.MINIMUM_EVIL,
-    'random': color_grid_utils.EvilEnum.RANDOM,
-    'none': color_grid_utils.EvilEnum.NONE
-}
-
-
 def make_env(mode):
   suite, task = config.task.split('_', 1)
   if suite == 'dmc':
@@ -98,14 +87,16 @@ def make_env(mode):
       task, config.action_repeat, config.image_size,
       num_cells_per_dim=config.num_cells_per_dim,
       num_colors_per_cell=config.num_colors_per_cell,
-      evil_level=EVIL_CHOICES[config.evil_level],
+      evil_level=color_grid_utils.EVIL_CHOICE_CONVENIENCE_MAPPING[config.evil_level],
       action_power=config.action_power,
       action_splits=config.action_splits if 'action_splits' in config else None,
       action_dims_to_split=config.action_dims_to_split if 'action_dims_to_split' in config else None,
       no_agent=config.no_agent if 'no_agent' in config else False,
       task_kwargs={'random': 42},
       from_pixels=True,
-      visualize_reward=False)
+      visualize_reward=False,
+      natural_video_dir=config.natural_video_dir,
+      total_natural_frames=config.total_natural_frames)
     env = common.NormalizeAction(env)
   elif suite == 'nat':
     bg_path = config.bg_path_train if mode == 'train' else config.bg_path_test

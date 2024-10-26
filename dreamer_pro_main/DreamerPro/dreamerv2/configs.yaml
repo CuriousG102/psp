@@ -84,7 +84,10 @@ defaults:
   num_cells_per_dim: 16
   num_colors_per_cell: 11664
   evil_level: max
-  action_power: 3
+  action_power: -1
+  action_splits: [0]
+  natural_video_dir: '/media/hdd/Storage/kinetics-downloader/dataset/train/driving_car/*.mp4'
+  total_natural_frames: 1000
 
 max_evil:
 
@@ -93,6 +96,11 @@ max_evil:
   num_colors_per_cell: 11664
   evil_level: max
   action_power: 3
+
+natural_evil:
+  evil_level: natural
+  total_natural_frames: 2000
+  action_power: 1
 
 max_evil_reduced:
 
@@ -140,6 +148,30 @@ action_cross_sequence_evil_larger_3:
   num_colors_per_cell: 2500
   action_power: 4
   action_dims_to_split: [ 0 ]
+
+
+action_cross_sequence_2500:
+
+    evil_level: action_cross_sequence
+    num_colors_per_cell: 2500
+    action_dims_to_split: [0, 1, 2, 3]
+    action_power: -1
+    action_splits: [5, 5, 5, 5]
+
+action_seq_evil_2500:
+
+  evil_level: action_cross_sequence
+  num_colors_per_cell: 2500
+  action_dims_to_split: [0, 1, 2, 3]
+  action_power: -1
+  action_splits: [5, 5, 5, 5]
+
+action_cross_sequence_evil_new:
+
+    evil_level: action_cross_sequence
+    num_colors_per_cell: 2500
+    action_power: 4
+    action_dims_to_split: [ 0 ]
 
 atari:
 

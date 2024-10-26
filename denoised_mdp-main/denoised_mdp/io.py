@@ -15,7 +15,7 @@ import imageio
 
 
 def write_video(frames: List[torch.Tensor], title, path="", fps=30):
-    with imageio.get_writer(os.path.join(path, "%s.mp4" % title), mode='I', fps=fps) as writer:
+    with imageio.get_writer(os.path.join(path, "%s.mp4" % title), format='mp4', mode='I', fps=fps) as writer:
         for frame in frames:
             # VideoWrite expects H x W x C in BGR
             writer.append_data(frame.permute(1, 2, 0).numpy())

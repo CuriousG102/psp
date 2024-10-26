@@ -23,18 +23,6 @@ METHOD2DREAMER = {
     'inverse': InverseDreamer
 }
 
-EVIL_CHOICES = {
-    'max': color_grid_utils.EvilEnum.MAXIMUM_EVIL,
-    'reward': color_grid_utils.EvilEnum.EVIL_REWARD,
-    'action': color_grid_utils.EvilEnum.EVIL_ACTION,
-    'sequence': color_grid_utils.EvilEnum.EVIL_SEQUENCE,
-    'action_cross_sequence': color_grid_utils.EvilEnum.EVIL_ACTION_CROSS_SEQUENCE,
-    'minimum': color_grid_utils.EvilEnum.MINIMUM_EVIL,
-    'random': color_grid_utils.EvilEnum.RANDOM,
-    'color': color_grid_utils.EvilEnum.COLOR,
-    'none': color_grid_utils.EvilEnum.NONE
-}
-
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['MUJOCO_GL'] = 'egl'
 tf.get_logger().setLevel('ERROR')
@@ -49,6 +37,7 @@ def make_env(config, writer, prefix, datadir, store):
     env_id = 'dmc_%s_%s_%s' % (domain_name, task_name, config.seed)
     env_id += f'{"-".join(map(str, config.action_dims_to_split))}_{config.num_cells_per_dim}_{config.num_colors_per_cell}_{config.evil_level}-v1'
 
+    evil_level = color_grid_utils.EVIL_CHOICE_CONVENIENCE_MAPPING[config.evil_level]
     if env_id not in gym.envs.registry:
         registration.register(
             id=env_id,
@@ -61,10 +50,15 @@ def make_env(config, writer, prefix, datadir, store):
                 },
                 'num_cells_per_dim': config.num_cells_per_dim,
                 'num_colors_per_cell': config.num_colors_per_cell,
-                'evil_level': EVIL_CHOICES[config.evil_level],
+                'evil_level': evil_level,
                 'action_dims_to_split': config.action_dims_to_split,
                 'action_power': config.action_power,
-                'action_splits': config.action_splits,
+                'action_splits': (
+                    config.action_splits
+                    if evil_level != color_grid_utils.EvilEnum.NATURAL
+                    else None),
+                'natural_video_dir': config.natural_video_dir,
+                'total_natural_frames': config.total_natural_frames,
                 'environment_kwargs': None,
                 'visualize_reward': False,
                 'from_pixels': True,
@@ -185,14 +179,17 @@ if __name__ == '__main__':
     parser.add_argument('--num_cells_per_dim', type=int, required=True)
     parser.add_argument('--num_colors_per_cell', type=int, required=True)
     parser.add_argument(
-        '--evil_level', choices=list(EVIL_CHOICES.keys()), required=True)
+        '--evil_level',
+        choices=list(color_grid_utils.EVIL_CHOICE_CONVENIENCE_MAPPING.keys()),
+        required=True)
     parser.add_argument(
         '--action_power', type=int, required=True
     )
     parser.add_argument('--action_splits', nargs='*', type=int)
     parser.add_argument('--no_agent', action='store_true')
     parser.add_argument('--agent', dest='no_agent', action='store_false')
-    parser.add_argument('--bg_color', nargs='*')
+    parser.add_argument('--natural_video_dir', type=str)
+    parser.add_argument('--total_natural_frames', type=int)
     parser.set_defaults(no_agent=False)
     args, remaining = parser.parse_known_args()
     config_path = 'tia/Dreamer/train_configs/' + args.method + '.yaml'
